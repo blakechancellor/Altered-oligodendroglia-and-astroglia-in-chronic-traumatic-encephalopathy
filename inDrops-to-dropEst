@@ -1,5 +1,10 @@
 #Take indrops v3 BCL files and produce exonic and intronic counts. 
 
+#R1 - 61bp transcript 
+#R2 - 8bp barcode 1
+#R3 - 8bp library index 
+#R4 - 14bp barcode 2/UMI
+
 #Step 1. Generate multiplexed fastq files from BCL files, from https://github.com/indrops/indrops
 #Run this in the flow cell directory 
 bcl2fastq --use-bases-mask y*,y*,y*,y* --mask-short-adapter-reads 0 --minimum-trimmed-read-length 0
@@ -24,7 +29,7 @@ module load R/3.4.1
 /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/[sample1]_R2.fastq.gz /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/[sample1]_R4.fastq.gz 
 /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/[sample1]_R1.fastq.gz 
 
-#Step 4. Assemble refernce genome for STAR 
+#Step 4. Assemble refernce genome for STAR, takes around 5.5 hours 
 wget ftp://ftp.ensembl.org/pub/release-97/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz
 wget ftp://ftp.ensembl.org/pub/release-97/gtf/homo_sapiens/Homo_sapiens.GRCh38.97.gtf.gz
 
@@ -46,9 +51,9 @@ STAR --runThreadN 1 \
 #Step 5. Run STAR 
 module load gcc/6.2.0 
 module load star/2.7.0f
-STAR --genomeDir ${STAR_index} \
---readFilesIn ${lib_files} \
---outFileNamePrefix ${outdir}/ \
+STAR --genomeDir /n/groups/gray/Blake/genomes/STAR/hg38 \
+--readFilesIn /n/groups/gray/Blake/CTE_1/fastq/tagged_fastq/ \
+--outFileNamePrefix /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/K117_1/ \
 --runThreadN 2 \
 --outSAMmultNmax 1 \
 --readNameSeparator space \
@@ -60,3 +65,10 @@ STAR --genomeDir ${STAR_index} \
 
 #Step 7. Run Velocyto 
 
+   libraries :
+      - {library_name: "K117_1", library_index: "CTTAATAG"}
+      - {library_name: "K117_2", library_index: "ATAGCCTT"}
+      - {library_name: "K117_3", library_index: "TAAGGCTC"}
+      - {library_name: "L5864_1", library_index: "TCGCATAA"}
+      - {library_name: "L5864_2", library_index: "TTACCTCC"}
+      - {library_name: "L5864_3", library_index: "CAGTTATG"}
