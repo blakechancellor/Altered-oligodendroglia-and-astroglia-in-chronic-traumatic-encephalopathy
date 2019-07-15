@@ -1,14 +1,12 @@
 #Take indrops v3 BCL files and produce exonic and intronic counts. 
-#BCL to fastq, from https://github.com/indrops/indrops
+
+#Step 1. Generate multiplexed fastq files from BCL files, from https://github.com/indrops/indrops
 #Run this in the flow cell directory 
 bcl2fastq --use-bases-mask y*,y*,y*,y* --mask-short-adapter-reads 0 --minimum-trimmed-read-length 0
-
 #Output is multiplexed fastq files with four reads (R1, R2, R3, R4). dropEst only expects three reads, so we need 
 #to manually sort by library. 
 
-
-#Notes 
-Step 1. Manually demultiplex by library
+#Step 2. Manually demultiplex by library
 #!/bin/sh
 #SBATCH --mem 50G
 #SBATCH -p long
@@ -19,14 +17,14 @@ source activate /n/groups/gray/sam_rotation/indrop2/
 
 python /n/groups/gray/Blake/dropEst/v3_predemultiplexing_script/predemultiplexv3fastq_RZSLW.py /n/groups/gray/Blake/CTE_1/CTE_1.yaml
 
-Step 2. Run dropTag on tagged fastq files
+#Step 3. Run dropTag on tagged fastq files
 module load gcc/6.2.0 
 module load R/3.4.1
 /n/groups/gray/Blake/dropEst/dropEst/build/droptag -p 1 -c /n/groups/gray/Blake/dropEst/dropEst/configs/indrop_v3.xml -S -s 
 /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/[sample1]_R2.fastq.gz /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/[sample1]_R4.fastq.gz 
 /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/[sample1]_R1.fastq.gz 
 
-Step 3. Assemble refernce genome for STAR 
+#Step 4. Assemble refernce genome for STAR 
 wget ftp://ftp.ensembl.org/pub/release-97/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa.gz
 wget ftp://ftp.ensembl.org/pub/release-97/gtf/homo_sapiens/Homo_sapiens.GRCh38.97.gtf.gz
 
@@ -45,7 +43,7 @@ STAR --runThreadN 1 \
 --sjdbGTFfile /n/groups/gray/Blake/genomes/STAR/Homo_sapiens.GRCh38.97.gtf \
 --sjdbOverhang 99
 
-Step 4. Run STAR 
+#Step 5. Run STAR 
 module load gcc/6.2.0 
 module load star/2.7.0f
 STAR --genomeDir ${STAR_index} \
@@ -57,4 +55,8 @@ STAR --genomeDir ${STAR_index} \
 --outSAMunmapped Within \
 --outSAMtype BAM SortedByCoordinate \
 --readFilesCommand zcat """ )
+
+#Step 6. Run dropEst 
+
+#Step 7. Run Velocyto 
 
