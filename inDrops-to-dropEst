@@ -11,7 +11,7 @@ bcl2fastq --use-bases-mask y*,y*,y*,y* --mask-short-adapter-reads 0 --minimum-tr
 #Output is multiplexed fastq files with four reads (R1, R2, R3, R4). dropEst only expects three reads, so we need 
 #to manually sort by library. 
 
-#Step 2. Manually demultiplex by library
+#Step 2. Manually demultiplex by library, takes around 34 hours
 #!/bin/sh
 #SBATCH --mem 50G
 #SBATCH -p long
