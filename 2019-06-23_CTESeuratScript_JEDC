@@ -1,0 +1,1014 @@
+#This script is designed to work within an R-project directory that contains the original counts files.
+#If an R-project directory is not in use, set a working directory and add the original count files.
+
+#View Seurat vignette.
+#https://satijalab.org/seurat/get_started.html
+
+
+#---------- Initiation ----------
+
+
+#Load packages.
+library(cowplot)
+library(dplyr)
+library(reticulate)
+library(scater)
+library(Seurat)
+
+#Set python environment.
+use_python("C:/Users/josep/AppData/Local/Programs/Python/Python37/python.exe")
+
+#Read-in counts.
+control1.data <- readSparseCounts("L5864_1.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+control2.data <- readSparseCounts("L5864_2.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+control3.data <- readSparseCounts("L5864_3.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+CTE1.data <- readSparseCounts("K117_1.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+CTE2.data <- readSparseCounts("K117_2.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+CTE3.data <- readSparseCounts("K117_3.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+
+#Transpose counts.
+control1.data <- t(control1.data)
+control2.data <- t(control2.data)
+control3.data <- t(control3.data)
+CTE1.data <- t(CTE1.data)
+CTE2.data <- t(CTE2.data)
+CTE3.data <- t(CTE3.data)
+
+#Add condition and technical replicate identifiers.
+colnames(control1.data) <- paste(colnames(control1.data), "-control1", sep="")
+colnames(control2.data) <- paste(colnames(control2.data), "-control2", sep="")
+colnames(control3.data) <- paste(colnames(control3.data), "-control3", sep="")
+colnames(CTE1.data) <- paste(colnames(CTE1.data), "-CTE1", sep="")
+colnames(CTE2.data) <- paste(colnames(CTE2.data), "-CTE2", sep="")
+colnames(CTE3.data) <- paste(colnames(CTE3.data), "-CTE3", sep="")
+
+#Concatenate to counts-by-condition.
+control.data <- cbind(control1.data, control2.data, control3.data)
+CTE.data <- cbind(CTE1.data, CTE2.data, CTE3.data)
+
+#Build control Seurat object with quality control.
+control <- CreateSeuratObject(counts = control.data, project = "CTE_control", min.cells = 5)
+control$condition <- "control"
+control[["percent.mt"]] <- PercentageFeatureSet(object = control, pattern = "^MT-")
+control <- subset(x = control, subset = nFeature_RNA > 185 & nFeature_RNA < 2500 & percent.mt < 5)
+control <- NormalizeData(object = control, verbose = FALSE)
+control <- FindVariableFeatures(object = control, selection.method = "vst", nfeatures = 2000)
+
+#Build CTE Seurat object with quality control.
+CTE <- CreateSeuratObject(counts = CTE.data, project = "CTE_CTE", min.cells = 5)
+CTE$condition <- "CTE"
+CTE[["percent.mt"]] <- PercentageFeatureSet(object = CTE, pattern = "^MT-")
+CTE <- subset(x = CTE, subset = nFeature_RNA > 185 & nFeature_RNA < 2500 & percent.mt < 5)
+CTE <- NormalizeData(object = CTE, verbose = FALSE)
+CTE <- FindVariableFeatures(object = CTE, selection.method = "vst", nfeatures = 2000)
+
+#Integrate Seurat objects.
+CTE.anchors <- FindIntegrationAnchors(object.list = list(control, CTE), dims = 1:20)
+CTE.combined <- IntegrateData(anchorset = CTE.anchors, dims = 1:20)
+
+
+#---------- Integrated ----------
+
+
+#Perform mitochondrial RNA quality control, basic analyses, and visualization.
+DefaultAssay(object = CTE.combined) <- "integrated"
+CTE.combined <- ScaleData(object = CTE.combined, verbose = FALSE)
+CTE.combined <- ScaleData(object = CTE.combined, vars.to.regress = 'percent.mt')
+CTE.combined <- RunPCA(object = CTE.combined, npcs = 30, verbose = FALSE)
+CTE.combined <- RunUMAP(object = CTE.combined, reduction = "pca", dims = 1:30)
+CTE.combined <- FindNeighbors(object = CTE.combined, reduction = "pca", dims = 1:30)
+CTE.combined <- FindClusters(CTE.combined, resolution = 2)
+VlnPlot(object = CTE.combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+p1 <- DimPlot(object = CTE.combined, reduction = "umap", group.by = "condition")
+p2 <- DimPlot(object = CTE.combined, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+DimPlot(object = CTE.combined, reduction = "umap", split.by = "condition")
+
+#Find marker genes.
+CTE.markers <- FindAllMarkers(object = CTE.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+CTE.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_logFC)
+
+#Use known marker genes to identify cell types.
+FeaturePlot(object = CTE.combined, features = c("AQP4"), min.cutoff = "q9")
+FeaturePlot(object = CTE.combined, features = c("MEG3"), min.cutoff = "q9")
+FeaturePlot(object = CTE.combined, features = c("PDGFRA"), min.cutoff = "q9")
+FeaturePlot(object = CTE.combined, features = c("CLDN11"), min.cutoff = "q9")
+
+#Rename cluster identities and re-visualize.
+CTE.combined <- RenameIdents(object = CTE.combined, `0` = "OL1", `1` = "OL2", `2` = "Astro", `3` = "OPC", `4` = "Neuron")
+Idents(object = CTE.combined) <- factor(x = Idents(object = CTE.combined), levels = c("OL1", "OL2", "Astro", "OPC", "Neuron"))
+DimPlot(object = CTE.combined, reduction = "umap", split.by = "condition", label = TRUE)
+
+#Add meta-data. 
+CTE.combined$celltype.condition <- paste(Idents(object = CTE.combined), CTE.combined$condition, sep = "_")
+CTE.combined$celltype <- Idents(object = CTE.combined)
+Idents(object = CTE.combined) <- "celltype.condition"
+
+#Quantify cell counts by condition per cell type.
+table(CTE.combined@meta.data$celltype.condition)
+
+#Perform differential gene expression analysis by cell type and add comparison meta-data.
+#OPC Sub-Cluster.
+int.OPC_CTE.OPC_control <- FindMarkers(object = CTE.combined, ident.1 = "OPC_CTE", ident.2 = "OPC_control", verbose = FALSE)
+int.OPC_CTE.OPC_control <- int.OPC_CTE.OPC_control[((int.OPC_CTE.OPC_control$avg_logFC >= 1) | (int.OPC_CTE.OPC_control$avg_logFC <= -1)) & (int.OPC_CTE.OPC_control$p_val_adj <= 0.05),]
+int.OPC_CTE.OPC_control$gene_name <- row.names(int.OPC_CTE.OPC_control)
+int.OPC_CTE.OPC_control<- cbind(int.OPC_CTE.OPC_control, pct.1.name = rep(NA, length(row.names(int.OPC_CTE.OPC_control))), pct.2.name = rep(NA, length(row.names(int.OPC_CTE.OPC_control))), comparison = rep(NA, length(row.names(int.OPC_CTE.OPC_control))))
+int.OPC_CTE.OPC_control$pct.1.name <- "int.OPC_CTE"
+int.OPC_CTE.OPC_control$pct.2.name <- "int.OPC_control"
+int.OPC_CTE.OPC_control$comparison <- "between_conditions"
+int.OPC_CTE.OPC_control
+#OL1 Sub-Cluster.
+int.OL1_CTE.OL1_control <- FindMarkers(object = CTE.combined, ident.1 = "OL1_CTE", ident.2 = "OL1_control", verbose = FALSE)
+int.OL1_CTE.OL1_control <- int.OL1_CTE.OL1_control[((int.OL1_CTE.OL1_control$avg_logFC >= 1) | (int.OL1_CTE.OL1_control$avg_logFC <= -1)) & (int.OL1_CTE.OL1_control$p_val_adj <= 0.05),]
+int.OL1_CTE.OL1_control$gene_name <- row.names(int.OL1_CTE.OL1_control)
+int.OL1_CTE.OL1_control <- cbind(int.OL1_CTE.OL1_control, pct.1.name = rep(NA, length(row.names(int.OL1_CTE.OL1_control))), pct.2.name = rep(NA, length(row.names(int.OL1_CTE.OL1_control))), comparison = rep(NA, length(row.names(int.OL1_CTE.OL1_control))))
+int.OL1_CTE.OL1_control$pct.1.name <- "int.OL1_CTE"
+int.OL1_CTE.OL1_control$pct.2.name <- "int.OL1_control"
+int.OL1_CTE.OL1_control$comparison <- "between_conditions"
+int.OL1_CTE.OL1_control
+int.OL1_CTE.OL2_control <- FindMarkers(object = CTE.combined, ident.1 = "OL1_CTE", ident.2 = "OL2_control", verbose = FALSE)
+int.OL1_CTE.OL2_control <- int.OL1_CTE.OL2_control[((int.OL1_CTE.OL2_control$avg_logFC >= 1) | (int.OL1_CTE.OL2_control$avg_logFC <= -1)) & (int.OL1_CTE.OL2_control$p_val_adj <= 0.05),]
+int.OL1_CTE.OL2_control$gene_name <- row.names(int.OL1_CTE.OL2_control)
+int.OL1_CTE.OL2_control <- cbind(int.OL1_CTE.OL2_control, pct.1.name = rep(NA, length(row.names(int.OL1_CTE.OL2_control))), pct.2.name = rep(NA, length(row.names(int.OL1_CTE.OL2_control))), comparison = rep(NA, length(row.names(int.OL1_CTE.OL2_control))))
+int.OL1_CTE.OL2_control$pct.1.name <- "int.OL1_CTE"
+int.OL1_CTE.OL2_control$pct.2.name <- "int.OL2_control"
+int.OL1_CTE.OL2_control$comparison <- "between_conditions"
+int.OL1_CTE.OL2_control
+int.OL1_CTE.OLX_control <- FindMarkers(object = CTE.combined, ident.1 = "OL1_CTE", ident.2 = c("OL1_control", "OL2_control"), verbose = FALSE)
+int.OL1_CTE.OLX_control <- int.OL1_CTE.OLX_control[((int.OL1_CTE.OLX_control$avg_logFC >= 1) | (int.OL1_CTE.OLX_control$avg_logFC <= -1)) & (int.OL1_CTE.OLX_control$p_val_adj <= 0.05),]
+int.OL1_CTE.OLX_control$gene_name <- row.names(int.OL1_CTE.OLX_control)
+int.OL1_CTE.OLX_control <- cbind(int.OL1_CTE.OLX_control, pct.1.name = rep(NA, length(row.names(int.OL1_CTE.OLX_control))), pct.2.name = rep(NA, length(row.names(int.OL1_CTE.OLX_control))), comparison = rep(NA, length(row.names(int.OL1_CTE.OLX_control))))
+int.OL1_CTE.OLX_control$pct.1.name <- "int.OL1_CTE"
+int.OL1_CTE.OLX_control$pct.2.name <- "int.OLX_control"
+int.OL1_CTE.OLX_control$comparison <- "between_conditions"
+int.OL1_CTE.OLX_control
+int.OL1_CTE.OL2_CTE <- FindMarkers(object = CTE.combined, ident.1 = "OL1_CTE", ident.2 = "OL2_CTE", verbose = FALSE)
+int.OL1_CTE.OL2_CTE <- int.OL1_CTE.OL2_CTE[((int.OL1_CTE.OL2_CTE$avg_logFC >= 1) | (int.OL1_CTE.OL2_CTE$avg_logFC <= -1)) & (int.OL1_CTE.OL2_CTE$p_val_adj <= 0.05),]
+int.OL1_CTE.OL2_CTE$gene_name <- row.names(int.OL1_CTE.OL2_CTE)
+int.OL1_CTE.OL2_CTE <- cbind(int.OL1_CTE.OL2_CTE, pct.1.name = rep(NA, length(row.names(int.OL1_CTE.OL2_CTE))), pct.2.name = rep(NA, length(row.names(int.OL1_CTE.OL2_CTE))), comparison = rep(NA, length(row.names(int.OL1_CTE.OL2_CTE))))
+int.OL1_CTE.OL2_CTE$pct.1.name <- "int.OL1_CTE"
+int.OL1_CTE.OL2_CTE$pct.2.name <- "int.OL2_CTE"
+int.OL1_CTE.OL2_CTE$comparison <- "within_conditions"
+int.OL1_CTE.OL2_CTE
+#OL2 Sub-Cluster.
+int.OL2_CTE.OL2_control <- FindMarkers(object = CTE.combined, ident.1 = "OL2_CTE", ident.2 = "OL2_control", verbose = FALSE)
+int.OL2_CTE.OL2_control <- int.OL2_CTE.OL2_control[((int.OL2_CTE.OL2_control$avg_logFC >= 1) | (int.OL2_CTE.OL2_control$avg_logFC <= -1)) & (int.OL2_CTE.OL2_control$p_val_adj <= 0.05),]
+int.OL2_CTE.OL2_control$gene_name <- row.names(int.OL2_CTE.OL2_control)
+int.OL2_CTE.OL2_control <- cbind(int.OL2_CTE.OL2_control, pct.1.name = rep(NA, length(row.names(int.OL2_CTE.OL2_control))), pct.2.name = rep(NA, length(row.names(int.OL2_CTE.OL2_control))), comparison = rep(NA, length(row.names(int.OL2_CTE.OL2_control))))
+int.OL2_CTE.OL2_control$pct.1.name <- "int.OL2_CTE"
+int.OL2_CTE.OL2_control$pct.2.name <- "int.OL2_control"
+int.OL2_CTE.OL2_control$comparison <- "between_conditions"
+int.OL2_CTE.OL2_control
+int.OL2_CTE.OL1_control <- FindMarkers(object = CTE.combined, ident.1 = "OL2_CTE", ident.2 = "OL1_control", verbose = FALSE)
+int.OL2_CTE.OL1_control <- int.OL2_CTE.OL1_control[((int.OL2_CTE.OL1_control$avg_logFC >= 1) | (int.OL2_CTE.OL1_control$avg_logFC <= -1)) & (int.OL2_CTE.OL1_control$p_val_adj <= 0.05),]
+int.OL2_CTE.OL1_control$gene_name <- row.names(int.OL2_CTE.OL1_control)
+int.OL2_CTE.OL1_control <- cbind(int.OL2_CTE.OL1_control, pct.1.name = rep(NA, length(row.names(int.OL2_CTE.OL1_control))), pct.2.name = rep(NA, length(row.names(int.OL2_CTE.OL1_control))), comparison = rep(NA, length(row.names(int.OL2_CTE.OL1_control))))
+int.OL2_CTE.OL1_control$pct.1.name <- "int.OL2_CTE"
+int.OL2_CTE.OL1_control$pct.2.name <- "int.OL1_control"
+int.OL2_CTE.OL1_control$comparison <- "between_conditions"
+int.OL2_CTE.OL1_control
+int.OL2_CTE.OLX_control <- FindMarkers(object = CTE.combined, ident.1 = "OL2_CTE", ident.2 = c("OL1_control", "OL2_control"), verbose = FALSE)
+int.OL2_CTE.OLX_control <- int.OL2_CTE.OLX_control[((int.OL2_CTE.OLX_control$avg_logFC >= 1) | (int.OL2_CTE.OLX_control$avg_logFC <= -1)) & (int.OL2_CTE.OLX_control$p_val_adj <= 0.05),]
+int.OL2_CTE.OLX_control$gene_name <- row.names(int.OL2_CTE.OLX_control)
+int.OL2_CTE.OLX_control <- cbind(int.OL2_CTE.OLX_control, pct.1.name = rep(NA, length(row.names(int.OL2_CTE.OLX_control))), pct.2.name = rep(NA, length(row.names(int.OL2_CTE.OLX_control))), comparison = rep(NA, length(row.names(int.OL2_CTE.OLX_control))))
+int.OL2_CTE.OLX_control$pct.1.name <- "int.OL2_CTE"
+int.OL2_CTE.OLX_control$pct.2.name <- "int.OLX_control"
+int.OL2_CTE.OLX_control$comparison <- "between_conditions"
+int.OL2_CTE.OLX_control
+int.OL2_CTE.OL1_CTE <- FindMarkers(object = CTE.combined, ident.1 = "OL2_CTE", ident.2 = "OL1_CTE", verbose = FALSE)
+int.OL2_CTE.OL1_CTE <- int.OL2_CTE.OL1_CTE[((int.OL2_CTE.OL1_CTE$avg_logFC >= 1) | (int.OL2_CTE.OL1_CTE$avg_logFC <= -1)) & (int.OL2_CTE.OL1_CTE$p_val_adj <= 0.05),]
+int.OL2_CTE.OL1_CTE$gene_name <- row.names(int.OL2_CTE.OL1_CTE)
+int.OL2_CTE.OL1_CTE <- cbind(int.OL2_CTE.OL1_CTE, pct.1.name = rep(NA, length(row.names(int.OL2_CTE.OL1_CTE))), pct.2.name = rep(NA, length(row.names(int.OL2_CTE.OL1_CTE))), comparison = rep(NA, length(row.names(int.OL2_CTE.OL1_CTE))))
+int.OL2_CTE.OL1_CTE$pct.1.name <- "int.OL2_CTE"
+int.OL2_CTE.OL1_CTE$pct.2.name <- "int.OL1_CTE"
+int.OL2_CTE.OL1_CTE$comparison <- "within_conditions"
+int.OL2_CTE.OL1_CTE
+#Astro Sub-Cluster.
+int.astro_CTE.astro_control <- FindMarkers(object = CTE.combined, ident.1 = "Astro_CTE", ident.2 = "Astro_control", verbose = FALSE)
+int.astro_CTE.astro_control <- int.astro_CTE.astro_control[((int.astro_CTE.astro_control$avg_logFC >= 1) | (int.astro_CTE.astro_control$avg_logFC <= -1)) & (int.astro_CTE.astro_control$p_val_adj <= 0.05),]
+int.astro_CTE.astro_control$gene_name <- row.names(int.astro_CTE.astro_control)
+int.astro_CTE.astro_control <- cbind(int.astro_CTE.astro_control, pct.1.name = rep(NA, length(row.names(int.astro_CTE.astro_control))), pct.2.name = rep(NA, length(row.names(int.astro_CTE.astro_control))), comparison = rep(NA, length(row.names(int.astro_CTE.astro_control))))
+int.astro_CTE.astro_control$pct.1.name <- "int.astro_CTE"
+int.astro_CTE.astro_control$pct.2.name <- "int.astro_control"
+int.astro_CTE.astro_control$comparison <- "between_conditions"
+int.astro_CTE.astro_control
+#Neuron Sub-Cluster.
+int.neuron_CTE.neuron_control <- FindMarkers(object = CTE.combined, ident.1 = "Neuron_CTE", ident.2 = "Neuron_control", verbose = FALSE)
+int.neuron_CTE.neuron_control <- int.neuron_CTE.neuron_control[((int.neuron_CTE.neuron_control$avg_logFC >= 1) | (int.neuron_CTE.neuron_control$avg_logFC <= -1)) & (int.neuron_CTE.neuron_control$p_val_adj <= 0.05),]
+int.neuron_CTE.neuron_control$gene_name <- row.names(int.neuron_CTE.neuron_control)
+int.neuron_CTE.neuron_control <- cbind(int.neuron_CTE.neuron_control, pct.1.name = rep(NA, length(row.names(int.neuron_CTE.neuron_control))), pct.2.name = rep(NA, length(row.names(int.neuron_CTE.neuron_control))), comparison = rep(NA, length(row.names(int.neuron_CTE.neuron_control))))
+int.neuron_CTE.neuron_control$pct.1.name <- "int.neuron_CTE"
+int.neuron_CTE.neuron_control$pct.2.name <- "int.neuron_control"
+int.neuron_CTE.neuron_control$comparison <- "between_conditions"
+int.neuron_CTE.neuron_control
+
+#Get all differentially expressed genes.
+int_diff_genes <- rbind(int.OPC_CTE.OPC_control, int.OL1_CTE.OL1_control, int.OL1_CTE.OL2_control, int.OL1_CTE.OLX_control, int.OL1_CTE.OL2_CTE, int.OL2_CTE.OL2_control, int.OL2_CTE.OL1_control, int.OL2_CTE.OLX_control, int.OL2_CTE.OL1_CTE, int.astro_CTE.astro_control, int.neuron_CTE.neuron_control)
+row.names(int_diff_genes) <- int_diff_genes$gene_name
+int_diff_genes$subset <- "integrated"
+write.csv(int_diff_genes, file = "2019-06-30_CTEIntegratedGenes_JEDC")
+
+
+#---------- OPCs ----------
+
+
+#Subset OPCs.
+OPC <- SubsetData(object = CTE.combined, ident.use = c("OPC_CTE", "OPC_control"), do.clean = TRUE, do.scale = TRUE)
+
+#Perform basic analyses and visualization.
+OPC <- FindVariableFeatures(object = OPC, selection.method = "vst", nfeatures = 2000)
+OPC <- ScaleData(object = OPC, verbose = FALSE)
+OPC <- RunPCA(object = OPC, npcs = 10, verbose = FALSE)
+OPC <- RunUMAP(object = OPC, reduction = "pca", dims = 1:10)
+OPC <- FindNeighbors(object = OPC, reduction = "pca", dims = 1:10)
+OPC <- FindClusters(OPC, resolution = 0.4)
+p1 <- DimPlot(object = OPC, reduction = "umap", group.by = "condition")
+p2 <- DimPlot(object = OPC, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+DimPlot(object = OPC, reduction = "umap", split.by = "condition")
+
+#Find marker genes.
+OPC.markers <- FindAllMarkers(object = OPC, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+OPC.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_logFC)
+
+#Rename cluster identities and re-visualize.
+OPC <- RenameIdents(object = OPC, `0` = "OPC1", `1` = "OPC2", `2` = "OPC3")
+Idents(object = OPC) <- factor(x = Idents(object = OPC), levels = c("OPC1", "OPC2", "OPC3"))
+DimPlot(object = OPC, reduction = "umap", split.by = "condition", label = TRUE)
+
+#Add meta-data.
+OPC$celltype.condition <- paste(Idents(object = OPC), OPC$condition, sep = "_")
+OPC$celltype <- Idents(object = OPC)
+Idents(object = OPC) <- "celltype.condition"
+
+#Quantify cell counts by condition per cell type.
+table(OPC@meta.data$celltype.condition)
+
+#Perform differential gene expression analysis by cell type and add comparison meta-data.
+#OPC1 Sub-Cluster.
+OPC.OPC1_CTE.OPC1_control <- FindMarkers(object = OPC, ident.1 = "OPC1_CTE", ident.2 = "OPC1_control", verbose = FALSE)
+OPC.OPC1_CTE.OPC1_control <- OPC.OPC1_CTE.OPC1_control[((OPC.OPC1_CTE.OPC1_control$avg_logFC >= 1) | (OPC.OPC1_CTE.OPC1_control$avg_logFC <= -1)) & (OPC.OPC1_CTE.OPC1_control$p_val_adj <= 0.05),]
+OPC.OPC1_CTE.OPC1_control$gene_name <- row.names(OPC.OPC1_CTE.OPC1_control)
+OPC.OPC1_CTE.OPC1_control <- cbind(OPC.OPC1_CTE.OPC1_control, pct.1.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC1_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC1_control))), comparison = rep(NA, length(row.names(OPC.OPC1_CTE.OPC1_control))))
+OPC.OPC1_CTE.OPC1_control$pct.1.name <- "OPC.OPC1_CTE"
+OPC.OPC1_CTE.OPC1_control$pct.2.name <- "OPC.OPC1_control"
+OPC.OPC1_CTE.OPC1_control$comparison <- "between_conditions"
+OPC.OPC1_CTE.OPC1_control
+OPC.OPC1_CTE.OPC2_control <- FindMarkers(object = OPC, ident.1 = "OPC1_CTE", ident.2 = "OPC2_control", verbose = FALSE)
+OPC.OPC1_CTE.OPC2_control <- OPC.OPC1_CTE.OPC2_control[((OPC.OPC1_CTE.OPC2_control$avg_logFC >= 1) | (OPC.OPC1_CTE.OPC2_control$avg_logFC <= -1)) & (OPC.OPC1_CTE.OPC2_control$p_val_adj <= 0.05),]
+OPC.OPC1_CTE.OPC2_control$gene_name <- row.names(OPC.OPC1_CTE.OPC2_control)
+OPC.OPC1_CTE.OPC2_control <- cbind(OPC.OPC1_CTE.OPC2_control, pct.1.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC2_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC2_control))), comparison = rep(NA, length(row.names(OPC.OPC1_CTE.OPC2_control))))
+OPC.OPC1_CTE.OPC2_control$pct.1.name <- "OPC.OPC1_CTE"
+OPC.OPC1_CTE.OPC2_control$pct.2.name <- "OPC.OPC2_control"
+OPC.OPC1_CTE.OPC2_control$comparison <- "between_conditions"
+OPC.OPC1_CTE.OPC2_control
+OPC.OPC1_CTE.OPCX_control <- FindMarkers(object = OPC, ident.1 = "OPC1_CTE", ident.2 = c("OPC1_control", "OPC2_control"), verbose = FALSE)
+OPC.OPC1_CTE.OPCX_control <- OPC.OPC1_CTE.OPCX_control[((OPC.OPC1_CTE.OPCX_control$avg_logFC >= 1) | (OPC.OPC1_CTE.OPCX_control$avg_logFC <= -1)) & (OPC.OPC1_CTE.OPCX_control$p_val_adj <= 0.05),]
+OPC.OPC1_CTE.OPCX_control$gene_name <- row.names(OPC.OPC1_CTE.OPCX_control)
+OPC.OPC1_CTE.OPCX_control <- cbind(OPC.OPC1_CTE.OPCX_control, pct.1.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPCX_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPCX_control))), comparison = rep(NA, length(row.names(OPC.OPC1_CTE.OPCX_control))))
+OPC.OPC1_CTE.OPCX_control$pct.1.name <- "OPC.OPC1_CTE"
+OPC.OPC1_CTE.OPCX_control$pct.2.name <- "OPC.OPCX_control"
+OPC.OPC1_CTE.OPCX_control$comparison <- "between_conditions"
+OPC.OPC1_CTE.OPCX_control
+OPC.OPC1_CTE.OPC2_CTE <- FindMarkers(object = OPC, ident.1 = "OPC1_CTE", ident.2 = "OPC2_CTE", verbose = FALSE)
+OPC.OPC1_CTE.OPC2_CTE <- OPC.OPC1_CTE.OPC2_CTE[((OPC.OPC1_CTE.OPC2_CTE$avg_logFC >= 1) | (OPC.OPC1_CTE.OPC2_CTE$avg_logFC <= -1)) & (OPC.OPC1_CTE.OPC2_CTE$p_val_adj <= 0.05),]
+OPC.OPC1_CTE.OPC2_CTE$gene_name <- row.names(OPC.OPC1_CTE.OPC2_CTE)
+OPC.OPC1_CTE.OPC2_CTE <- cbind(OPC.OPC1_CTE.OPC2_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC2_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC2_CTE))), comparison = rep(NA, length(row.names(OPC.OPC1_CTE.OPC2_CTE))))
+OPC.OPC1_CTE.OPC2_CTE$pct.1.name <- "OPC.OPC1_CTE"
+OPC.OPC1_CTE.OPC2_CTE$pct.2.name <- "OPC.OPC2_CTE"
+OPC.OPC1_CTE.OPC2_CTE$comparison <- "within_conditions"
+OPC.OPC1_CTE.OPC2_CTE
+OPC.OPC1_CTE.OPC3_CTE <- FindMarkers(object = OPC, ident.1 = "OPC1_CTE", ident.2 = "OPC3_CTE", verbose = FALSE)
+OPC.OPC1_CTE.OPC3_CTE <- OPC.OPC1_CTE.OPC3_CTE[((OPC.OPC1_CTE.OPC3_CTE$avg_logFC >= 1) | (OPC.OPC1_CTE.OPC3_CTE$avg_logFC <= -1)) & (OPC.OPC1_CTE.OPC3_CTE$p_val_adj <= 0.05),]
+OPC.OPC1_CTE.OPC3_CTE$gene_name <- row.names(OPC.OPC1_CTE.OPC3_CTE)
+OPC.OPC1_CTE.OPC3_CTE <- cbind(OPC.OPC1_CTE.OPC3_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC3_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPC3_CTE))), comparison = rep(NA, length(row.names(OPC.OPC1_CTE.OPC3_CTE))))
+OPC.OPC1_CTE.OPC3_CTE$pct.1.name <- "OPC.OPC1_CTE"
+OPC.OPC1_CTE.OPC3_CTE$pct.2.name <- "OPC.OPC3_CTE"
+OPC.OPC1_CTE.OPC3_CTE$comparison <- "within_conditions"
+OPC.OPC1_CTE.OPC3_CTE
+OPC.OPC1_CTE.OPCX_CTE <- FindMarkers(object = OPC, ident.1 = "OPC1_CTE", ident.2 = c("OPC2_CTE", "OPC3_CTE"), verbose = FALSE)
+OPC.OPC1_CTE.OPCX_CTE <- OPC.OPC1_CTE.OPCX_CTE[((OPC.OPC1_CTE.OPCX_CTE$avg_logFC >= 1) | (OPC.OPC1_CTE.OPCX_CTE$avg_logFC <= -1)) & (OPC.OPC1_CTE.OPCX_CTE$p_val_adj <= 0.05),]
+OPC.OPC1_CTE.OPCX_CTE$gene_name <- row.names(OPC.OPC1_CTE.OPCX_CTE)
+OPC.OPC1_CTE.OPCX_CTE <- cbind(OPC.OPC1_CTE.OPCX_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPCX_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC1_CTE.OPCX_CTE))), comparison = rep(NA, length(row.names(OPC.OPC1_CTE.OPCX_CTE))))
+OPC.OPC1_CTE.OPCX_CTE$pct.1.name <- "OPC.OPC1_CTE"
+OPC.OPC1_CTE.OPCX_CTE$pct.2.name <- "OPC.OPCX_CTE"
+OPC.OPC1_CTE.OPCX_CTE$comparison <- "within_conditions"
+OPC.OPC1_CTE.OPCX_CTE
+#OPC2 Sub-Cluster.
+OPC.OPC2_CTE.OPC2_control <- FindMarkers(object = OPC, ident.1 = "OPC2_CTE", ident.2 = "OPC2_control", verbose = FALSE)
+OPC.OPC2_CTE.OPC2_control <- OPC.OPC2_CTE.OPC2_control[((OPC.OPC2_CTE.OPC2_control$avg_logFC >= 1) | (OPC.OPC2_CTE.OPC2_control$avg_logFC <= -1)) & (OPC.OPC2_CTE.OPC2_control$p_val_adj <= 0.05),]
+OPC.OPC2_CTE.OPC2_control$gene_name <- row.names(OPC.OPC2_CTE.OPC2_control)
+OPC.OPC2_CTE.OPC2_control <- cbind(OPC.OPC2_CTE.OPC2_control, pct.1.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC2_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC2_control))), comparison = rep(NA, length(row.names(OPC.OPC2_CTE.OPC2_control))))
+OPC.OPC2_CTE.OPC2_control$pct.1.name <- "OPC.OPC2_CTE"
+OPC.OPC2_CTE.OPC2_control$pct.2.name <- "OPC.OPC2_control"
+OPC.OPC2_CTE.OPC2_control$comparison <- "between_conditions"
+OPC.OPC2_CTE.OPC2_control
+OPC.OPC2_CTE.OPC1_control <- FindMarkers(object = OPC, ident.1 = "OPC2_CTE", ident.2 = "OPC1_control", verbose = FALSE)
+OPC.OPC2_CTE.OPC1_control <- OPC.OPC2_CTE.OPC1_control[((OPC.OPC2_CTE.OPC1_control$avg_logFC >= 1) | (OPC.OPC2_CTE.OPC1_control$avg_logFC <= -1)) & (OPC.OPC2_CTE.OPC1_control$p_val_adj <= 0.05),]
+OPC.OPC2_CTE.OPC1_control$gene_name <- row.names(OPC.OPC2_CTE.OPC1_control)
+OPC.OPC2_CTE.OPC1_control <- cbind(OPC.OPC2_CTE.OPC1_control, pct.1.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC1_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC1_control))), comparison = rep(NA, length(row.names(OPC.OPC2_CTE.OPC1_control))))
+OPC.OPC2_CTE.OPC1_control$pct.1.name <- "OPC.OPC2_CTE"
+OPC.OPC2_CTE.OPC1_control$pct.2.name <- "OPC.OPC1_control"
+OPC.OPC2_CTE.OPC1_control$comparison <- "between_conditions"
+OPC.OPC2_CTE.OPC1_control
+OPC.OPC2_CTE.OPCX_control <- FindMarkers(object = OPC, ident.1 = "OPC2_CTE", ident.2 = c("OPC1_control", "OPC2_control"), verbose = FALSE)
+OPC.OPC2_CTE.OPCX_control <- OPC.OPC2_CTE.OPCX_control[((OPC.OPC2_CTE.OPCX_control$avg_logFC >= 1) | (OPC.OPC2_CTE.OPCX_control$avg_logFC <= -1)) & (OPC.OPC2_CTE.OPCX_control$p_val_adj <= 0.05),]
+OPC.OPC2_CTE.OPCX_control$gene_name <- row.names(OPC.OPC2_CTE.OPCX_control)
+OPC.OPC2_CTE.OPCX_control <- cbind(OPC.OPC2_CTE.OPCX_control, pct.1.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPCX_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPCX_control))), comparison = rep(NA, length(row.names(OPC.OPC2_CTE.OPCX_control))))
+OPC.OPC2_CTE.OPCX_control$pct.1.name <- "OPC.OPC2_CTE"
+OPC.OPC2_CTE.OPCX_control$pct.2.name <- "OPC.OPCX_control"
+OPC.OPC2_CTE.OPCX_control$comparison <- "between_conditions"
+OPC.OPC2_CTE.OPCX_control
+OPC.OPC2_CTE.OPC1_CTE <- FindMarkers(object = OPC, ident.1 = "OPC2_CTE", ident.2 = "OPC1_CTE", verbose = FALSE)
+OPC.OPC2_CTE.OPC1_CTE <- OPC.OPC2_CTE.OPC1_CTE[((OPC.OPC2_CTE.OPC1_CTE$avg_logFC >= 1) | (OPC.OPC2_CTE.OPC1_CTE$avg_logFC <= -1)) & (OPC.OPC2_CTE.OPC1_CTE$p_val_adj <= 0.05),]
+OPC.OPC2_CTE.OPC1_CTE$gene_name <- row.names(OPC.OPC2_CTE.OPC1_CTE)
+OPC.OPC2_CTE.OPC1_CTE <- cbind(OPC.OPC2_CTE.OPC1_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC1_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC1_CTE))), comparison = rep(NA, length(row.names(OPC.OPC2_CTE.OPC1_CTE))))
+OPC.OPC2_CTE.OPC1_CTE$pct.1.name <- "OPC.OPC2_CTE"
+OPC.OPC2_CTE.OPC1_CTE$pct.2.name <- "OPC.OPC1_CTE"
+OPC.OPC2_CTE.OPC1_CTE$comparison <- "within_conditions"
+OPC.OPC2_CTE.OPC1_CTE
+OPC.OPC2_CTE.OPC3_CTE <- FindMarkers(object = OPC, ident.1 = "OPC2_CTE", ident.2 = "OPC3_CTE", verbose = FALSE)
+OPC.OPC2_CTE.OPC3_CTE <- OPC.OPC2_CTE.OPC3_CTE[((OPC.OPC2_CTE.OPC3_CTE$avg_logFC >= 1) | (OPC.OPC2_CTE.OPC3_CTE$avg_logFC <= -1)) & (OPC.OPC2_CTE.OPC3_CTE$p_val_adj <= 0.05),]
+OPC.OPC2_CTE.OPC3_CTE$gene_name <- row.names(OPC.OPC2_CTE.OPC3_CTE)
+OPC.OPC2_CTE.OPC3_CTE <- cbind(OPC.OPC2_CTE.OPC3_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC3_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPC3_CTE))), comparison = rep(NA, length(row.names(OPC.OPC2_CTE.OPC3_CTE))))
+OPC.OPC2_CTE.OPC3_CTE$pct.1.name <- "OPC.OPC2_CTE"
+OPC.OPC2_CTE.OPC3_CTE$pct.2.name <- "OPC.OPC3_CTE"
+OPC.OPC2_CTE.OPC3_CTE$comparison <- "within_conditions"
+OPC.OPC2_CTE.OPC3_CTE
+OPC.OPC2_CTE.OPCX_CTE <- FindMarkers(object = OPC, ident.1 = "OPC2_CTE", ident.2 = c("OPC1_CTE", "OPC3_CTE"), verbose = FALSE)
+OPC.OPC2_CTE.OPCX_CTE <- OPC.OPC2_CTE.OPCX_CTE[((OPC.OPC2_CTE.OPCX_CTE$avg_logFC >= 1) | (OPC.OPC2_CTE.OPCX_CTE$avg_logFC <= -1)) & (OPC.OPC2_CTE.OPCX_CTE$p_val_adj <= 0.05),]
+OPC.OPC2_CTE.OPCX_CTE$gene_name <- row.names(OPC.OPC2_CTE.OPCX_CTE)
+OPC.OPC2_CTE.OPCX_CTE <- cbind(OPC.OPC2_CTE.OPCX_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPCX_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC2_CTE.OPCX_CTE))), comparison = rep(NA, length(row.names(OPC.OPC2_CTE.OPCX_CTE))))
+OPC.OPC2_CTE.OPCX_CTE$pct.1.name <- "OPC.OPC2_CTE"
+OPC.OPC2_CTE.OPCX_CTE$pct.2.name <- "OPC.OPCX_CTE"
+OPC.OPC2_CTE.OPCX_CTE$comparison <- "within_conditions"
+OPC.OPC2_CTE.OPCX_CTE
+#OPC3 Sub-Cluster.
+OPC.OPC3_CTE.OPC1_control <- FindMarkers(object = OPC, ident.1 = "OPC3_CTE", ident.2 = "OPC1_control", verbose = FALSE)
+OPC.OPC3_CTE.OPC1_control <- OPC.OPC3_CTE.OPC1_control[((OPC.OPC3_CTE.OPC1_control$avg_logFC >= 1) | (OPC.OPC3_CTE.OPC1_control$avg_logFC <= -1)) & (OPC.OPC3_CTE.OPC1_control$p_val_adj <= 0.05),]
+OPC.OPC3_CTE.OPC1_control$gene_name <- row.names(OPC.OPC3_CTE.OPC1_control)
+OPC.OPC3_CTE.OPC1_control <- cbind(OPC.OPC3_CTE.OPC1_control, pct.1.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC1_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC1_control))), comparison = rep(NA, length(row.names(OPC.OPC3_CTE.OPC1_control))))
+OPC.OPC3_CTE.OPC1_control$pct.1.name <- "OPC.OPC3_CTE"
+OPC.OPC3_CTE.OPC1_control$pct.2.name <- "OPC.OPC1_control"
+OPC.OPC3_CTE.OPC1_control$comparison <- "between_conditions"
+OPC.OPC3_CTE.OPC1_control
+OPC.OPC3_CTE.OPC2_control <- FindMarkers(object = OPC, ident.1 = "OPC3_CTE", ident.2 = "OPC2_control", verbose = FALSE)
+OPC.OPC3_CTE.OPC2_control <- OPC.OPC3_CTE.OPC2_control[((OPC.OPC3_CTE.OPC2_control$avg_logFC >= 1) | (OPC.OPC3_CTE.OPC2_control$avg_logFC <= -1)) & (OPC.OPC3_CTE.OPC2_control$p_val_adj <= 0.05),]
+OPC.OPC3_CTE.OPC2_control$gene_name <- row.names(OPC.OPC3_CTE.OPC2_control)
+OPC.OPC3_CTE.OPC2_control <- cbind(OPC.OPC3_CTE.OPC2_control, pct.1.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC2_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC2_control))), comparison = rep(NA, length(row.names(OPC.OPC3_CTE.OPC2_control))))
+OPC.OPC3_CTE.OPC2_control$pct.1.name <- "OPC.OPC3_CTE"
+OPC.OPC3_CTE.OPC2_control$pct.2.name <- "OPC.OPC2_control"
+OPC.OPC3_CTE.OPC2_control$comparison <- "between_conditions"
+OPC.OPC3_CTE.OPC2_control
+OPC.OPC3_CTE.OPCX_control <- FindMarkers(object = OPC, ident.1 = "OPC3_CTE", ident.2 = c("OPC1_control", "OPC2_control"), verbose = FALSE)
+OPC.OPC3_CTE.OPCX_control <- OPC.OPC3_CTE.OPCX_control[((OPC.OPC3_CTE.OPCX_control$avg_logFC >= 1) | (OPC.OPC3_CTE.OPCX_control$avg_logFC <= -1)) & (OPC.OPC3_CTE.OPCX_control$p_val_adj <= 0.05),]
+OPC.OPC3_CTE.OPCX_control$gene_name <- row.names(OPC.OPC3_CTE.OPCX_control)
+OPC.OPC3_CTE.OPCX_control <- cbind(OPC.OPC3_CTE.OPCX_control, pct.1.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPCX_control))), pct.2.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPCX_control))), comparison = rep(NA, length(row.names(OPC.OPC3_CTE.OPCX_control))))
+OPC.OPC3_CTE.OPCX_control$pct.1.name <- "OPC.OPC3_CTE"
+OPC.OPC3_CTE.OPCX_control$pct.2.name <- "OPC.OPCX_control"
+OPC.OPC3_CTE.OPCX_control$comparison <- "between_conditions"
+OPC.OPC3_CTE.OPCX_control
+OPC.OPC3_CTE.OPC1_CTE <- FindMarkers(object = OPC, ident.1 = "OPC3_CTE", ident.2 = "OPC1_CTE", verbose = FALSE)
+OPC.OPC3_CTE.OPC1_CTE <- OPC.OPC3_CTE.OPC1_CTE[((OPC.OPC3_CTE.OPC1_CTE$avg_logFC >= 1) | (OPC.OPC3_CTE.OPC1_CTE$avg_logFC <= -1)) & (OPC.OPC3_CTE.OPC1_CTE$p_val_adj <= 0.05),]
+OPC.OPC3_CTE.OPC1_CTE$gene_name <- row.names(OPC.OPC3_CTE.OPC1_CTE)
+OPC.OPC3_CTE.OPC1_CTE <- cbind(OPC.OPC3_CTE.OPC1_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC1_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC1_CTE))), comparison = rep(NA, length(row.names(OPC.OPC3_CTE.OPC1_CTE))))
+OPC.OPC3_CTE.OPC1_CTE$pct.1.name <- "OPC.OPC3_CTE"
+OPC.OPC3_CTE.OPC1_CTE$pct.2.name <- "OPC.OPC1_CTE"
+OPC.OPC3_CTE.OPC1_CTE$comparison <- "within_conditions"
+OPC.OPC3_CTE.OPC1_CTE
+OPC.OPC3_CTE.OPC2_CTE <- FindMarkers(object = OPC, ident.1 = "OPC3_CTE", ident.2 = "OPC2_CTE", verbose = FALSE)
+OPC.OPC3_CTE.OPC2_CTE <- OPC.OPC3_CTE.OPC2_CTE[((OPC.OPC3_CTE.OPC2_CTE$avg_logFC >= 1) | (OPC.OPC3_CTE.OPC2_CTE$avg_logFC <= -1)) & (OPC.OPC3_CTE.OPC2_CTE$p_val_adj <= 0.05),]
+OPC.OPC3_CTE.OPC2_CTE$gene_name <- row.names(OPC.OPC3_CTE.OPC2_CTE)
+OPC.OPC3_CTE.OPC2_CTE <- cbind(OPC.OPC3_CTE.OPC2_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC2_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPC2_CTE))), comparison = rep(NA, length(row.names(OPC.OPC3_CTE.OPC2_CTE))))
+OPC.OPC3_CTE.OPC2_CTE$pct.1.name <- "OPC.OPC3_CTE"
+OPC.OPC3_CTE.OPC2_CTE$pct.2.name <- "OPC.OPC2_CTE"
+OPC.OPC3_CTE.OPC2_CTE$comparison <- "within_conditions"
+OPC.OPC3_CTE.OPC2_CTE
+OPC.OPC3_CTE.OPCX_CTE <- FindMarkers(object = OPC, ident.1 = "OPC3_CTE", ident.2 = c("OPC1_CTE", "OPC2_CTE"), verbose = FALSE)
+OPC.OPC3_CTE.OPCX_CTE <- OPC.OPC3_CTE.OPCX_CTE[((OPC.OPC3_CTE.OPCX_CTE$avg_logFC >= 1) | (OPC.OPC3_CTE.OPCX_CTE$avg_logFC <= -1)) & (OPC.OPC3_CTE.OPCX_CTE$p_val_adj <= 0.05),]
+OPC.OPC3_CTE.OPCX_CTE$gene_name <- row.names(OPC.OPC3_CTE.OPCX_CTE)
+OPC.OPC3_CTE.OPCX_CTE <- cbind(OPC.OPC3_CTE.OPCX_CTE, pct.1.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPCX_CTE))), pct.2.name = rep(NA, length(row.names(OPC.OPC3_CTE.OPCX_CTE))), comparison = rep(NA, length(row.names(OPC.OPC3_CTE.OPCX_CTE))))
+OPC.OPC3_CTE.OPCX_CTE$pct.1.name <- "OPC.OPC3_CTE"
+OPC.OPC3_CTE.OPCX_CTE$pct.2.name <- "OPC.OPCX_CTE"
+OPC.OPC3_CTE.OPCX_CTE$comparison <- "within_conditions"
+OPC.OPC3_CTE.OPCX_CTE
+
+#Get all differentially expressed genes.
+OPC_diff_genes <- rbind(OPC.OPC1_CTE.OPC1_control, OPC.OPC1_CTE.OPC2_control, OPC.OPC1_CTE.OPCX_control, OPC.OPC1_CTE.OPC2_CTE, OPC.OPC1_CTE.OPC3_CTE, OPC.OPC1_CTE.OPCX_CTE, OPC.OPC2_CTE.OPC2_control, OPC.OPC2_CTE.OPC1_control, OPC.OPC2_CTE.OPCX_control, OPC.OPC2_CTE.OPC1_CTE, OPC.OPC2_CTE.OPC3_CTE, OPC.OPC2_CTE.OPCX_CTE, OPC.OPC3_CTE.OPC1_control, OPC.OPC3_CTE.OPC2_control, OPC.OPC3_CTE.OPCX_control, OPC.OPC3_CTE.OPC1_CTE, OPC.OPC3_CTE.OPC2_CTE, OPC.OPC3_CTE.OPCX_CTE)
+row.names(OPC_diff_genes) <- OPC_diff_genes$gene_name
+OPC_diff_genes$subset <- "OPC"
+write.csv(OPC_diff_genes, file = "2019-06-30_CTEOPCGenes_JEDC")
+
+
+#---------- Oligodendrocytes (with  Microglial and Endothelial Cells) ----------
+
+
+#Subset OLs.
+OL <- SubsetData(object = CTE.combined, ident.use = c("OL1_CTE", "OL1_control", "OL2_CTE", "OL2_control"), do.clean = TRUE, do.scale = TRUE)
+
+#Perform basic analyses and visualization.
+OL <- FindVariableFeatures(object = OL, selection.method = "vst", nfeatures = 2000)
+OL <- ScaleData(object = OL, verbose = FALSE)
+OL <- RunPCA(object = OL, npcs = 10, verbose = FALSE)
+OL <- RunUMAP(object = OL, reduction = "pca", dims = 1:10)
+OL <- FindNeighbors(object = OL, reduction = "pca", dims = 1:10)
+OL <- FindClusters(OL, resolution = 0.4)
+p1 <- DimPlot(object = OL, reduction = "umap", group.by = "condition")
+p2 <- DimPlot(object = OL, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+DimPlot(object = OL, reduction = "umap", split.by = "condition")
+
+#Find marker genes.
+OL.markers <- FindAllMarkers(object = OL, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+OL.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_logFC)
+
+#Rename cluster identities and re-visualize.
+OL <- RenameIdents(object = OL, `0` = "OL1", `1` = "OL2", `2` = "OL3", `3` = "Endo")
+Idents(object = OL) <- factor(x = Idents(object = OL), levels = c("OL1", "OL2", "OL3", "Endo"))
+DimPlot(object = OL, reduction = "umap", split.by = "condition", label = TRUE)
+
+#Add meta-data.
+OL$celltype.condition <- paste(Idents(object = OL), OL$condition, sep = "_")
+OL$celltype <- Idents(object = OL)
+Idents(object = OL) <- "celltype.condition"
+
+#Quantify cell counts by condition per cell type.
+table(OL@meta.data$celltype.condition)
+
+#Perform differential gene expression analysis by cell type and add comparison meta-data.
+#OL1 Sub-Cluster.
+OL.OL1_CTE.OL1_control <- FindMarkers(object = OL, ident.1 = "OL1_CTE", ident.2 = "OL1_control", verbose = FALSE)
+OL.OL1_CTE.OL1_control <- OL.OL1_CTE.OL1_control[((OL.OL1_CTE.OL1_control$avg_logFC >= 1) | (OL.OL1_CTE.OL1_control$avg_logFC <= -1)) & (OL.OL1_CTE.OL1_control$p_val_adj <= 0.05),]
+OL.OL1_CTE.OL1_control$gene_name <- row.names(OL.OL1_CTE.OL1_control)
+OL.OL1_CTE.OL1_control <- cbind(OL.OL1_CTE.OL1_control, pct.1.name = rep(NA, length(row.names(OL.OL1_CTE.OL1_control))), pct.2.name = rep(NA, length(row.names(OL.OL1_CTE.OL1_control))), comparison = rep(NA, length(row.names(OL.OL1_CTE.OL1_control))))
+OL.OL1_CTE.OL1_control$pct.1.name <- "OL.OL1_CTE"
+OL.OL1_CTE.OL1_control$pct.2.name <- "OL.OL1_control"
+OL.OL1_CTE.OL1_control$comparison <- "between_conditions"
+OL.OL1_CTE.OL1_control
+OL.OL1_CTE.OL2_control <- FindMarkers(object = OL, ident.1 = "OL1_CTE", ident.2 = "OL2_control", verbose = FALSE)
+OL.OL1_CTE.OL2_control <- OL.OL1_CTE.OL2_control[((OL.OL1_CTE.OL2_control$avg_logFC >= 1) | (OL.OL1_CTE.OL2_control$avg_logFC <= -1)) & (OL.OL1_CTE.OL2_control$p_val_adj <= 0.05),]
+OL.OL1_CTE.OL2_control$gene_name <- row.names(OL.OL1_CTE.OL2_control)
+OL.OL1_CTE.OL2_control <- cbind(OL.OL1_CTE.OL2_control, pct.1.name = rep(NA, length(row.names(OL.OL1_CTE.OL2_control))), pct.2.name = rep(NA, length(row.names(OL.OL1_CTE.OL2_control))), comparison = rep(NA, length(row.names(OL.OL1_CTE.OL2_control))))
+OL.OL1_CTE.OL2_control$pct.1.name <- "OL.OL1_CTE"
+OL.OL1_CTE.OL2_control$pct.2.name <- "OL.OL2_control"
+OL.OL1_CTE.OL2_control$comparison <- "between_conditions"
+OL.OL1_CTE.OL2_control
+OL.OL1_CTE.OL3_control <- FindMarkers(object = OL, ident.1 = "OL1_CTE", ident.2 = "OL3_control", verbose = FALSE)
+OL.OL1_CTE.OL3_control <- OL.OL1_CTE.OL3_control[((OL.OL1_CTE.OL3_control$avg_logFC >= 1) | (OL.OL1_CTE.OL3_control$avg_logFC <= -1)) & (OL.OL1_CTE.OL3_control$p_val_adj <= 0.05),]
+OL.OL1_CTE.OL3_control$gene_name <- row.names(OL.OL1_CTE.OL3_control)
+OL.OL1_CTE.OL3_control <- cbind(OL.OL1_CTE.OL3_control, pct.1.name = rep(NA, length(row.names(OL.OL1_CTE.OL3_control))), pct.2.name = rep(NA, length(row.names(OL.OL1_CTE.OL3_control))), comparison = rep(NA, length(row.names(OL.OL1_CTE.OL3_control))))
+OL.OL1_CTE.OL3_control$pct.1.name <- "OL.OL1_CTE"
+OL.OL1_CTE.OL3_control$pct.2.name <- "OL.OL3_control"
+OL.OL1_CTE.OL3_control$comparison <- "between_conditions"
+OL.OL1_CTE.OL3_control
+OL.OL1_CTE.OLX_control <- FindMarkers(object = OL, ident.1 = "OL1_CTE", ident.2 = c("OL1_control", "OL2_control", "OL3_control"), verbose = FALSE)
+OL.OL1_CTE.OLX_control <- OL.OL1_CTE.OLX_control[((OL.OL1_CTE.OLX_control$avg_logFC >= 1) | (OL.OL1_CTE.OLX_control$avg_logFC <= -1)) & (OL.OL1_CTE.OLX_control$p_val_adj <= 0.05),]
+OL.OL1_CTE.OLX_control$gene_name <- row.names(OL.OL1_CTE.OLX_control)
+OL.OL1_CTE.OLX_control <- cbind(OL.OL1_CTE.OLX_control, pct.1.name = rep(NA, length(row.names(OL.OL1_CTE.OLX_control))), pct.2.name = rep(NA, length(row.names(OL.OL1_CTE.OLX_control))), comparison = rep(NA, length(row.names(OL.OL1_CTE.OLX_control))))
+OL.OL1_CTE.OLX_control$pct.1.name <- "OL.OL1_CTE"
+OL.OL1_CTE.OLX_control$pct.2.name <- "OL.OLX_control"
+OL.OL1_CTE.OLX_control$comparison <- "between_conditions"
+OL.OL1_CTE.OLX_control
+OL.OL1_CTE.OL2_CTE <- FindMarkers(object = OL, ident.1 = "OL1_CTE", ident.2 = "OL2_CTE", verbose = FALSE)
+OL.OL1_CTE.OL2_CTE <- OL.OL1_CTE.OL2_CTE[((OL.OL1_CTE.OL2_CTE$avg_logFC >= 1) | (OL.OL1_CTE.OL2_CTE$avg_logFC <= -1)) & (OL.OL1_CTE.OL2_CTE$p_val_adj <= 0.05),]
+OL.OL1_CTE.OL2_CTE$gene_name <- row.names(OL.OL1_CTE.OL2_CTE)
+OL.OL1_CTE.OL2_CTE <- cbind(OL.OL1_CTE.OL2_CTE, pct.1.name = rep(NA, length(row.names(OL.OL1_CTE.OL2_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL1_CTE.OL2_CTE))), comparison = rep(NA, length(row.names(OL.OL1_CTE.OL2_CTE))))
+OL.OL1_CTE.OL2_CTE$pct.1.name <- "OL.OL1_CTE"
+OL.OL1_CTE.OL2_CTE$pct.2.name <- "OL.OL2_CTE"
+OL.OL1_CTE.OL2_CTE$comparison <- "within_conditions"
+OL.OL1_CTE.OL2_CTE
+OL.OL1_CTE.OL3_CTE <- FindMarkers(object = OL, ident.1 = "OL1_CTE", ident.2 = "OL3_CTE", verbose = FALSE)
+OL.OL1_CTE.OL3_CTE <- OL.OL1_CTE.OL3_CTE[((OL.OL1_CTE.OL3_CTE$avg_logFC >= 1) | (OL.OL1_CTE.OL3_CTE$avg_logFC <= -1)) & (OL.OL1_CTE.OL3_CTE$p_val_adj <= 0.05),]
+OL.OL1_CTE.OL3_CTE$gene_name <- row.names(OL.OL1_CTE.OL3_CTE)
+OL.OL1_CTE.OL3_CTE <- cbind(OL.OL1_CTE.OL3_CTE, pct.1.name = rep(NA, length(row.names(OL.OL1_CTE.OL3_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL1_CTE.OL3_CTE))), comparison = rep(NA, length(row.names(OL.OL1_CTE.OL3_CTE))))
+OL.OL1_CTE.OL3_CTE$pct.1.name <- "OL.OL1_CTE"
+OL.OL1_CTE.OL3_CTE$pct.2.name <- "OL.OL3_CTE"
+OL.OL1_CTE.OL3_CTE$comparison <- "within_conditions"
+OL.OL1_CTE.OL3_CTE
+OL.OL1_CTE.OLX_CTE <- FindMarkers(object = OL, ident.1 = "OL1_CTE", ident.2 = c("OL2_CTE", "OL3_CTE"), verbose = FALSE)
+OL.OL1_CTE.OLX_CTE <- OL.OL1_CTE.OLX_CTE[((OL.OL1_CTE.OLX_CTE$avg_logFC >= 1) | (OL.OL1_CTE.OLX_CTE$avg_logFC <= -1)) & (OL.OL1_CTE.OLX_CTE$p_val_adj <= 0.05),]
+OL.OL1_CTE.OLX_CTE$gene_name <- row.names(OL.OL1_CTE.OLX_CTE)
+OL.OL1_CTE.OLX_CTE <- cbind(OL.OL1_CTE.OLX_CTE, pct.1.name = rep(NA, length(row.names(OL.OL1_CTE.OLX_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL1_CTE.OLX_CTE))), comparison = rep(NA, length(row.names(OL.OL1_CTE.OLX_CTE))))
+OL.OL1_CTE.OLX_CTE$pct.1.name <- "OL.OL1_CTE"
+OL.OL1_CTE.OLX_CTE$pct.2.name <- "OL.OLX_CTE"
+OL.OL1_CTE.OLX_CTE$comparison <- "within_conditions"
+OL.OL1_CTE.OLX_CTE
+#OL2 Sub-Cluster.
+OL.OL2_CTE.OL2_control <- FindMarkers(object = OL, ident.1 = "OL2_CTE", ident.2 = "OL2_control", verbose = FALSE)
+OL.OL2_CTE.OL2_control <- OL.OL2_CTE.OL2_control[((OL.OL2_CTE.OL2_control$avg_logFC >= 1) | (OL.OL2_CTE.OL2_control$avg_logFC <= -1)) & (OL.OL2_CTE.OL2_control$p_val_adj <= 0.05),]
+OL.OL2_CTE.OL2_control$gene_name <- row.names(OL.OL2_CTE.OL2_control)
+OL.OL2_CTE.OL2_control <- cbind(OL.OL2_CTE.OL2_control, pct.1.name = rep(NA, length(row.names(OL.OL2_CTE.OL2_control))), pct.2.name = rep(NA, length(row.names(OL.OL2_CTE.OL2_control))), comparison = rep(NA, length(row.names(OL.OL2_CTE.OL2_control))))
+OL.OL2_CTE.OL2_control$pct.1.name <- "OL.OL2_CTE"
+OL.OL2_CTE.OL2_control$pct.2.name <- "OL.OL2_control"
+OL.OL2_CTE.OL2_control$comparison <- "between_conditions"
+OL.OL2_CTE.OL2_control
+OL.OL2_CTE.OL1_control <- FindMarkers(object = OL, ident.1 = "OL2_CTE", ident.2 = "OL1_control", verbose = FALSE)
+OL.OL2_CTE.OL1_control <- OL.OL2_CTE.OL1_control[((OL.OL2_CTE.OL1_control$avg_logFC >= 1) | (OL.OL2_CTE.OL1_control$avg_logFC <= -1)) & (OL.OL2_CTE.OL1_control$p_val_adj <= 0.05),]
+OL.OL2_CTE.OL1_control$gene_name <- row.names(OL.OL2_CTE.OL1_control)
+OL.OL2_CTE.OL1_control <- cbind(OL.OL2_CTE.OL1_control, pct.1.name = rep(NA, length(row.names(OL.OL2_CTE.OL1_control))), pct.2.name = rep(NA, length(row.names(OL.OL2_CTE.OL1_control))), comparison = rep(NA, length(row.names(OL.OL2_CTE.OL1_control))))
+OL.OL2_CTE.OL1_control$pct.1.name <- "OL.OL2_CTE"
+OL.OL2_CTE.OL1_control$pct.2.name <- "OL.OL1_control"
+OL.OL2_CTE.OL1_control$comparison <- "between_conditions"
+OL.OL2_CTE.OL1_control
+OL.OL2_CTE.OL3_control <- FindMarkers(object = OL, ident.1 = "OL2_CTE", ident.2 = "OL3_control", verbose = FALSE)
+OL.OL2_CTE.OL3_control <- OL.OL2_CTE.OL3_control[((OL.OL2_CTE.OL3_control$avg_logFC >= 1) | (OL.OL2_CTE.OL3_control$avg_logFC <= -1)) & (OL.OL2_CTE.OL3_control$p_val_adj <= 0.05),]
+OL.OL2_CTE.OL3_control$gene_name <- row.names(OL.OL2_CTE.OL3_control)
+OL.OL2_CTE.OL3_control <- cbind(OL.OL2_CTE.OL3_control, pct.1.name = rep(NA, length(row.names(OL.OL2_CTE.OL3_control))), pct.2.name = rep(NA, length(row.names(OL.OL2_CTE.OL3_control))), comparison = rep(NA, length(row.names(OL.OL2_CTE.OL3_control))))
+OL.OL2_CTE.OL3_control$pct.1.name <- "OL.OL2_CTE"
+OL.OL2_CTE.OL3_control$pct.2.name <- "OL.OL3_control"
+OL.OL2_CTE.OL3_control$comparison <- "between_conditions"
+OL.OL2_CTE.OL3_control
+OL.OL2_CTE.OLX_control <- FindMarkers(object = OL, ident.1 = "OL2_CTE", ident.2 = c("OL1_control", "OL2_control", "OL3_control"), verbose = FALSE)
+OL.OL2_CTE.OLX_control <- OL.OL2_CTE.OLX_control[((OL.OL2_CTE.OLX_control$avg_logFC >= 1) | (OL.OL2_CTE.OLX_control$avg_logFC <= -1)) & (OL.OL2_CTE.OLX_control$p_val_adj <= 0.05),]
+OL.OL2_CTE.OLX_control$gene_name <- row.names(OL.OL2_CTE.OLX_control)
+OL.OL2_CTE.OLX_control <- cbind(OL.OL2_CTE.OLX_control, pct.1.name = rep(NA, length(row.names(OL.OL2_CTE.OLX_control))), pct.2.name = rep(NA, length(row.names(OL.OL2_CTE.OLX_control))), comparison = rep(NA, length(row.names(OL.OL2_CTE.OLX_control))))
+OL.OL2_CTE.OLX_control$pct.1.name <- "OL.OL2_CTE"
+OL.OL2_CTE.OLX_control$pct.2.name <- "OL.OLX_control"
+OL.OL2_CTE.OLX_control$comparison <- "between_conditions"
+OL.OL2_CTE.OLX_control
+OL.OL2_CTE.OL1_CTE <- FindMarkers(object = OL, ident.1 = "OL2_CTE", ident.2 = "OL1_CTE", verbose = FALSE)
+OL.OL2_CTE.OL1_CTE <- OL.OL2_CTE.OL1_CTE[((OL.OL2_CTE.OL1_CTE$avg_logFC >= 1) | (OL.OL2_CTE.OL1_CTE$avg_logFC <= -1)) & (OL.OL2_CTE.OL1_CTE$p_val_adj <= 0.05),]
+OL.OL2_CTE.OL1_CTE$gene_name <- row.names(OL.OL2_CTE.OL1_CTE)
+OL.OL2_CTE.OL1_CTE <- cbind(OL.OL2_CTE.OL1_CTE, pct.1.name = rep(NA, length(row.names(OL.OL2_CTE.OL1_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL2_CTE.OL1_CTE))), comparison = rep(NA, length(row.names(OL.OL2_CTE.OL1_CTE))))
+OL.OL2_CTE.OL1_CTE$pct.1.name <- "OL.OL2_CTE"
+OL.OL2_CTE.OL1_CTE$pct.2.name <- "OL.OL1_CTE"
+OL.OL2_CTE.OL1_CTE$comparison <- "within_conditions"
+OL.OL2_CTE.OL1_CTE
+OL.OL2_CTE.OL3_CTE <- FindMarkers(object = OL, ident.1 = "OL2_CTE", ident.2 = "OL3_CTE", verbose = FALSE)
+OL.OL2_CTE.OL3_CTE <- OL.OL2_CTE.OL3_CTE[((OL.OL2_CTE.OL3_CTE$avg_logFC >= 1) | (OL.OL2_CTE.OL3_CTE$avg_logFC <= -1)) & (OL.OL2_CTE.OL3_CTE$p_val_adj <= 0.05),]
+OL.OL2_CTE.OL3_CTE$gene_name <- row.names(OL.OL2_CTE.OL3_CTE)
+OL.OL2_CTE.OL3_CTE <- cbind(OL.OL2_CTE.OL3_CTE, pct.1.name = rep(NA, length(row.names(OL.OL2_CTE.OL3_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL2_CTE.OL3_CTE))), comparison = rep(NA, length(row.names(OL.OL2_CTE.OL3_CTE))))
+OL.OL2_CTE.OL3_CTE$pct.1.name <- "OL.OL2_CTE"
+OL.OL2_CTE.OL3_CTE$pct.2.name <- "OL.OL3_CTE"
+OL.OL2_CTE.OL3_CTE$comparison <- "within_conditions"
+OL.OL2_CTE.OL3_CTE
+OL.OL2_CTE.OLX_CTE <- FindMarkers(object = OL, ident.1 = "OL2_CTE", ident.2 = c("OL1_CTE", "OL3_CTE"), verbose = FALSE)
+OL.OL2_CTE.OLX_CTE <- OL.OL2_CTE.OLX_CTE[((OL.OL2_CTE.OLX_CTE$avg_logFC >= 1) | (OL.OL2_CTE.OLX_CTE$avg_logFC <= -1)) & (OL.OL2_CTE.OLX_CTE$p_val_adj <= 0.05),]
+OL.OL2_CTE.OLX_CTE$gene_name <- row.names(OL.OL2_CTE.OLX_CTE)
+OL.OL2_CTE.OLX_CTE <- cbind(OL.OL2_CTE.OLX_CTE, pct.1.name = rep(NA, length(row.names(OL.OL2_CTE.OLX_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL2_CTE.OLX_CTE))), comparison = rep(NA, length(row.names(OL.OL2_CTE.OLX_CTE))))
+OL.OL2_CTE.OLX_CTE$pct.1.name <- "OL.OL2_CTE"
+OL.OL2_CTE.OLX_CTE$pct.2.name <- "OL.OLX_CTE"
+OL.OL2_CTE.OLX_CTE$comparison <- "within_conditions"
+OL.OL2_CTE.OLX_CTE
+#OL3 Sub-Cluster.
+OL.OL3_CTE.OL3_control <- FindMarkers(object = OL, ident.1 = "OL3_CTE", ident.2 = "OL3_control", verbose = FALSE)
+OL.OL3_CTE.OL3_control <- OL.OL3_CTE.OL3_control[((OL.OL3_CTE.OL3_control$avg_logFC >= 1) | (OL.OL3_CTE.OL3_control$avg_logFC <= -1)) & (OL.OL3_CTE.OL3_control$p_val_adj <= 0.05),]
+OL.OL3_CTE.OL3_control$gene_name <- row.names(OL.OL3_CTE.OL3_control)
+OL.OL3_CTE.OL3_control <- cbind(OL.OL3_CTE.OL3_control, pct.1.name = rep(NA, length(row.names(OL.OL3_CTE.OL3_control))), pct.2.name = rep(NA, length(row.names(OL.OL3_CTE.OL3_control))), comparison = rep(NA, length(row.names(OL.OL3_CTE.OL3_control))))
+OL.OL3_CTE.OL3_control$pct.1.name <- "OL.OL3_CTE"
+OL.OL3_CTE.OL3_control$pct.2.name <- "OL.OL3_control"
+OL.OL3_CTE.OL3_control$comparison <- "between_conditions"
+OL.OL3_CTE.OL3_control
+OL.OL3_CTE.OL1_control <- FindMarkers(object = OL, ident.1 = "OL3_CTE", ident.2 = "OL1_control", verbose = FALSE)
+OL.OL3_CTE.OL1_control <- OL.OL3_CTE.OL1_control[((OL.OL3_CTE.OL1_control$avg_logFC >= 1) | (OL.OL3_CTE.OL1_control$avg_logFC <= -1)) & (OL.OL3_CTE.OL1_control$p_val_adj <= 0.05),]
+OL.OL3_CTE.OL1_control$gene_name <- row.names(OL.OL3_CTE.OL1_control)
+OL.OL3_CTE.OL1_control <- cbind(OL.OL3_CTE.OL1_control, pct.1.name = rep(NA, length(row.names(OL.OL3_CTE.OL1_control))), pct.2.name = rep(NA, length(row.names(OL.OL3_CTE.OL1_control))), comparison = rep(NA, length(row.names(OL.OL3_CTE.OL1_control))))
+OL.OL3_CTE.OL1_control$pct.1.name <- "OL.OL3_CTE"
+OL.OL3_CTE.OL1_control$pct.2.name <- "OL.OL1_control"
+OL.OL3_CTE.OL1_control$comparison <- "between_conditions"
+OL.OL3_CTE.OL1_control
+OL.OL3_CTE.OL2_control <- FindMarkers(object = OL, ident.1 = "OL3_CTE", ident.2 = "OL2_control", verbose = FALSE)
+OL.OL3_CTE.OL2_control <- OL.OL3_CTE.OL2_control[((OL.OL3_CTE.OL2_control$avg_logFC >= 1) | (OL.OL3_CTE.OL2_control$avg_logFC <= -1)) & (OL.OL3_CTE.OL2_control$p_val_adj <= 0.05),]
+OL.OL3_CTE.OL2_control$gene_name <- row.names(OL.OL3_CTE.OL2_control)
+OL.OL3_CTE.OL2_control <- cbind(OL.OL3_CTE.OL2_control, pct.1.name = rep(NA, length(row.names(OL.OL3_CTE.OL2_control))), pct.2.name = rep(NA, length(row.names(OL.OL3_CTE.OL2_control))), comparison = rep(NA, length(row.names(OL.OL3_CTE.OL2_control))))
+OL.OL3_CTE.OL2_control$pct.1.name <- "OL.OL3_CTE"
+OL.OL3_CTE.OL2_control$pct.2.name <- "OL.OL2_control"
+OL.OL3_CTE.OL2_control$comparison <- "between_conditions"
+OL.OL3_CTE.OL2_control
+OL.OL3_CTE.OLX_control <- FindMarkers(object = OL, ident.1 = "OL3_CTE", ident.2 = c("OL1_control", "OL2_control", "OL3_control"), verbose = FALSE)
+OL.OL3_CTE.OLX_control <- OL.OL3_CTE.OLX_control[((OL.OL3_CTE.OLX_control$avg_logFC >= 1) | (OL.OL3_CTE.OLX_control$avg_logFC <= -1)) & (OL.OL3_CTE.OLX_control$p_val_adj <= 0.05),]
+OL.OL3_CTE.OLX_control$gene_name <- row.names(OL.OL3_CTE.OLX_control)
+OL.OL3_CTE.OLX_control <- cbind(OL.OL3_CTE.OLX_control, pct.1.name = rep(NA, length(row.names(OL.OL3_CTE.OLX_control))), pct.2.name = rep(NA, length(row.names(OL.OL3_CTE.OLX_control))), comparison = rep(NA, length(row.names(OL.OL3_CTE.OLX_control))))
+OL.OL3_CTE.OLX_control$pct.1.name <- "OL.OL3_CTE"
+OL.OL3_CTE.OLX_control$pct.2.name <- "OL.OLX_control"
+OL.OL3_CTE.OLX_control$comparison <- "between_conditions"
+OL.OL3_CTE.OLX_control
+OL.OL3_CTE.OL1_CTE <- FindMarkers(object = OL, ident.1 = "OL3_CTE", ident.2 = "OL1_CTE", verbose = FALSE)
+OL.OL3_CTE.OL1_CTE <- OL.OL3_CTE.OL1_CTE[((OL.OL3_CTE.OL1_CTE$avg_logFC >= 1) | (OL.OL3_CTE.OL1_CTE$avg_logFC <= -1)) & (OL.OL3_CTE.OL1_CTE$p_val_adj <= 0.05),]
+OL.OL3_CTE.OL1_CTE$gene_name <- row.names(OL.OL3_CTE.OL1_CTE)
+OL.OL3_CTE.OL1_CTE <- cbind(OL.OL3_CTE.OL1_CTE, pct.1.name = rep(NA, length(row.names(OL.OL3_CTE.OL1_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL3_CTE.OL1_CTE))), comparison = rep(NA, length(row.names(OL.OL3_CTE.OL1_CTE))))
+OL.OL3_CTE.OL1_CTE$pct.1.name <- "OL.OL3_CTE"
+OL.OL3_CTE.OL1_CTE$pct.2.name <- "OL.OL1_CTE"
+OL.OL3_CTE.OL1_CTE$comparison <- "within_conditions"
+OL.OL3_CTE.OL1_CTE
+OL.OL3_CTE.OL2_CTE <- FindMarkers(object = OL, ident.1 = "OL3_CTE", ident.2 = "OL2_CTE", verbose = FALSE)
+OL.OL3_CTE.OL2_CTE <- OL.OL3_CTE.OL2_CTE[((OL.OL3_CTE.OL2_CTE$avg_logFC >= 1) | (OL.OL3_CTE.OL2_CTE$avg_logFC <= -1)) & (OL.OL3_CTE.OL2_CTE$p_val_adj <= 0.05),]
+OL.OL3_CTE.OL2_CTE$gene_name <- row.names(OL.OL3_CTE.OL2_CTE)
+OL.OL3_CTE.OL2_CTE <- cbind(OL.OL3_CTE.OL2_CTE, pct.1.name = rep(NA, length(row.names(OL.OL3_CTE.OL2_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL3_CTE.OL2_CTE))), comparison = rep(NA, length(row.names(OL.OL3_CTE.OL2_CTE))))
+OL.OL3_CTE.OL2_CTE$pct.1.name <- "OL.OL3_CTE"
+OL.OL3_CTE.OL2_CTE$pct.2.name <- "OL.OL2_CTE"
+OL.OL3_CTE.OL2_CTE$comparison <- "within_conditions"
+OL.OL3_CTE.OL2_CTE
+OL.OL3_CTE.OLX_CTE <- FindMarkers(object = OL, ident.1 = "OL3_CTE", ident.2 = c("OL1_CTE", "OL2_CTE"), verbose = FALSE)
+OL.OL3_CTE.OLX_CTE <- OL.OL3_CTE.OLX_CTE[((OL.OL3_CTE.OLX_CTE$avg_logFC >= 1) | (OL.OL3_CTE.OLX_CTE$avg_logFC <= -1)) & (OL.OL3_CTE.OLX_CTE$p_val_adj <= 0.05),]
+OL.OL3_CTE.OLX_CTE$gene_name <- row.names(OL.OL3_CTE.OLX_CTE)
+OL.OL3_CTE.OLX_CTE <- cbind(OL.OL3_CTE.OLX_CTE, pct.1.name = rep(NA, length(row.names(OL.OL3_CTE.OLX_CTE))), pct.2.name = rep(NA, length(row.names(OL.OL3_CTE.OLX_CTE))), comparison = rep(NA, length(row.names(OL.OL3_CTE.OLX_CTE))))
+OL.OL3_CTE.OLX_CTE$pct.1.name <- "OL.OL3_CTE"
+OL.OL3_CTE.OLX_CTE$pct.2.name <- "OL.OLX_CTE"
+OL.OL3_CTE.OLX_CTE$comparison <- "within_conditions"
+OL.OL3_CTE.OLX_CTE
+
+#Get all differentially expressed genes.
+OL_diff_genes <- rbind(OL.OL1_CTE.OL1_control, OL.OL1_CTE.OL2_control, OL.OL1_CTE.OL3_control, OL.OL1_CTE.OLX_control, OL.OL1_CTE.OL2_CTE, OL.OL1_CTE.OL3_CTE, OL.OL1_CTE.OLX_CTE, OL.OL2_CTE.OL2_control, OL.OL2_CTE.OL1_control, OL.OL2_CTE.OL3_control, OL.OL2_CTE.OLX_control, OL.OL2_CTE.OL1_CTE, OL.OL2_CTE.OL3_CTE, OL.OL2_CTE.OLX_CTE, OL.OL3_CTE.OL3_control, OL.OL3_CTE.OL1_control, OL.OL3_CTE.OL2_control, OL.OL3_CTE.OLX_control, OL.OL3_CTE.OL1_CTE, OL.OL3_CTE.OL2_CTE, OL.OL3_CTE.OLX_CTE)
+row.names(OL_diff_genes) <- OL_diff_genes$gene_name
+OL_diff_genes$subset <- "OL"
+write.csv(OL_diff_genes, file = "2019-06-30_CTEOLGenes_JEDC")
+
+
+#---------- Astrocytes ----------
+
+
+#Subset astrocytes.
+astro <- SubsetData(object = CTE.combined, ident.use = c("Astro_CTE", "Astro_control"), do.clean = TRUE, do.scale = TRUE)
+
+#Perform basic analyses and visualization.
+astro <- FindVariableFeatures(object = astro, selection.method = "vst", nfeatures = 2000)
+astro <- ScaleData(object = astro, verbose = FALSE)
+astro <- RunPCA(object = astro, npcs = 10, verbose = FALSE)
+astro <- RunUMAP(object = astro, reduction = "pca", dims = 1:10)
+astro <- FindNeighbors(object = astro, reduction = "pca", dims = 1:10)
+astro <- FindClusters(astro, resolution = 0.4)
+p1 <- DimPlot(object = astro, reduction = "umap", group.by = "condition")
+p2 <- DimPlot(object = astro, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+DimPlot(object = astro, reduction = "umap", split.by = "condition")
+
+#Find marker genes.
+astro.markers <- FindAllMarkers(object = astro, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+astro.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_logFC)
+
+#Rename cluster identities and re-visualize.
+astro <- RenameIdents(object = astro, `0` = "Astro1", `1` = "Astro2", `2` = "Astro3")
+Idents(object = astro) <- factor(x = Idents(object = astro), levels = c("Astro1", "Astro2", "Astro3"))
+DimPlot(object = astro, reduction = "umap", split.by = "condition", label = TRUE)
+
+#Add meta-data.
+astro$celltype.condition <- paste(Idents(object = astro), astro$condition, sep = "_")
+astro$celltype <- Idents(object = astro)
+Idents(object = astro) <- "celltype.condition"
+
+#Quantify cell counts by condition per cell type.
+table(astro@meta.data$celltype.condition)
+
+#Perform differential gene expression analysis by cell type and add comparison meta-data.
+#Astro1 Sub-Cluster.
+astro.astro1_CTE.astro1_control <- FindMarkers(object = astro, ident.1 = "Astro1_CTE", ident.2 = "Astro1_control", verbose = FALSE)
+astro.astro1_CTE.astro1_control <- astro.astro1_CTE.astro1_control[((astro.astro1_CTE.astro1_control$avg_logFC >= 1) | (astro.astro1_CTE.astro1_control$avg_logFC <= -1)) & (astro.astro1_CTE.astro1_control$p_val_adj <= 0.05),]
+astro.astro1_CTE.astro1_control$gene_name <- row.names(astro.astro1_CTE.astro1_control)
+astro.astro1_CTE.astro1_control <- cbind(astro.astro1_CTE.astro1_control, pct.1.name = rep(NA, length(row.names(astro.astro1_CTE.astro1_control))), pct.2.name = rep(NA, length(row.names(astro.astro1_CTE.astro1_control))), comparison = rep(NA, length(row.names(astro.astro1_CTE.astro1_control))))
+astro.astro1_CTE.astro1_control$pct.1.name <- "astro.astro1_CTE"
+astro.astro1_CTE.astro1_control$pct.2.name <- "astro.astro1_control"
+astro.astro1_CTE.astro1_control$comparison <- "between_conditions"
+astro.astro1_CTE.astro1_control
+astro.astro1_CTE.astro2_control <- FindMarkers(object = astro, ident.1 = "Astro1_CTE", ident.2 = "Astro2_control", verbose = FALSE)
+astro.astro1_CTE.astro2_control <- astro.astro1_CTE.astro2_control[((astro.astro1_CTE.astro2_control$avg_logFC >= 1) | (astro.astro1_CTE.astro2_control$avg_logFC <= -1)) & (astro.astro1_CTE.astro2_control$p_val_adj <= 0.05),]
+astro.astro1_CTE.astro2_control$gene_name <- row.names(astro.astro1_CTE.astro2_control)
+astro.astro1_CTE.astro2_control <- cbind(astro.astro1_CTE.astro2_control, pct.1.name = rep(NA, length(row.names(astro.astro1_CTE.astro2_control))), pct.2.name = rep(NA, length(row.names(astro.astro1_CTE.astro2_control))), comparison = rep(NA, length(row.names(astro.astro1_CTE.astro2_control))))
+astro.astro1_CTE.astro2_control$pct.1.name <- "astro.astro1_CTE"
+astro.astro1_CTE.astro2_control$pct.2.name <- "astro.astro2_control"
+astro.astro1_CTE.astro2_control$comparison <- "between_conditions"
+astro.astro1_CTE.astro2_control
+astro.astro1_CTE.astroX_control <- FindMarkers(object = astro, ident.1 = "Astro1_CTE", ident.2 = c("Astro1_control", "Astro2_control"), verbose = FALSE)
+astro.astro1_CTE.astroX_control <- astro.astro1_CTE.astroX_control[((astro.astro1_CTE.astroX_control$avg_logFC >= 1) | (astro.astro1_CTE.astroX_control$avg_logFC <= -1)) & (astro.astro1_CTE.astroX_control$p_val_adj <= 0.05),]
+astro.astro1_CTE.astroX_control$gene_name <- row.names(astro.astro1_CTE.astroX_control)
+astro.astro1_CTE.astroX_control <- cbind(astro.astro1_CTE.astroX_control, pct.1.name = rep(NA, length(row.names(astro.astro1_CTE.astroX_control))), pct.2.name = rep(NA, length(row.names(astro.astro1_CTE.astroX_control))), comparison = rep(NA, length(row.names(astro.astro1_CTE.astroX_control))))
+astro.astro1_CTE.astroX_control$pct.1.name <- "astro.astro1_CTE"
+astro.astro1_CTE.astroX_control$pct.2.name <- "astro.astroX_control"
+astro.astro1_CTE.astroX_control$comparison <- "between_conditions"
+astro.astro1_CTE.astroX_control
+astro.astro1_CTE.astro2_CTE <- FindMarkers(object = astro, ident.1 = "Astro1_CTE", ident.2 = "Astro2_CTE", verbose = FALSE)
+astro.astro1_CTE.astro2_CTE <- astro.astro1_CTE.astro2_CTE[((astro.astro1_CTE.astro2_CTE$avg_logFC >= 1) | (astro.astro1_CTE.astro2_CTE$avg_logFC <= -1)) & (astro.astro1_CTE.astro2_CTE$p_val_adj <= 0.05),]
+astro.astro1_CTE.astro2_CTE$gene_name <- row.names(astro.astro1_CTE.astro2_CTE)
+astro.astro1_CTE.astro2_CTE <- cbind(astro.astro1_CTE.astro2_CTE, pct.1.name = rep(NA, length(row.names(astro.astro1_CTE.astro2_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro1_CTE.astro2_CTE))), comparison = rep(NA, length(row.names(astro.astro1_CTE.astro2_CTE))))
+astro.astro1_CTE.astro2_CTE$pct.1.name <- "astro.astro1_CTE"
+astro.astro1_CTE.astro2_CTE$pct.2.name <- "astro.astro2_CTE"
+astro.astro1_CTE.astro2_CTE$comparison <- "within_conditions"
+astro.astro1_CTE.astro2_CTE
+astro.astro1_CTE.astro3_CTE <- FindMarkers(object = astro, ident.1 = "Astro1_CTE", ident.2 = "Astro3_CTE", verbose = FALSE)
+astro.astro1_CTE.astro3_CTE <- astro.astro1_CTE.astro3_CTE[((astro.astro1_CTE.astro3_CTE$avg_logFC >= 1) | (astro.astro1_CTE.astro3_CTE$avg_logFC <= -1)) & (astro.astro1_CTE.astro3_CTE$p_val_adj <= 0.05),]
+astro.astro1_CTE.astro3_CTE$gene_name <- row.names(astro.astro1_CTE.astro3_CTE)
+astro.astro1_CTE.astro3_CTE <- cbind(astro.astro1_CTE.astro3_CTE, pct.1.name = rep(NA, length(row.names(astro.astro1_CTE.astro3_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro1_CTE.astro3_CTE))), comparison = rep(NA, length(row.names(astro.astro1_CTE.astro3_CTE))))
+astro.astro1_CTE.astro3_CTE$pct.1.name <- "astro.astro1_CTE"
+astro.astro1_CTE.astro3_CTE$pct.2.name <- "astro.astro3_CTE"
+astro.astro1_CTE.astro3_CTE$comparison <- "within_conditions"
+astro.astro1_CTE.astro3_CTE
+astro.astro1_CTE.astroX_CTE <- FindMarkers(object = astro, ident.1 = "Astro1_CTE", ident.2 = c("Astro2_CTE", "Astro3_CTE"), verbose = FALSE)
+astro.astro1_CTE.astroX_CTE <- astro.astro1_CTE.astroX_CTE[((astro.astro1_CTE.astroX_CTE$avg_logFC >= 1) | (astro.astro1_CTE.astroX_CTE$avg_logFC <= -1)) & (astro.astro1_CTE.astroX_CTE$p_val_adj <= 0.05),]
+astro.astro1_CTE.astroX_CTE$gene_name <- row.names(astro.astro1_CTE.astroX_CTE)
+astro.astro1_CTE.astroX_CTE <- cbind(astro.astro1_CTE.astroX_CTE, pct.1.name = rep(NA, length(row.names(astro.astro1_CTE.astroX_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro1_CTE.astroX_CTE))), comparison = rep(NA, length(row.names(astro.astro1_CTE.astroX_CTE))))
+astro.astro1_CTE.astroX_CTE$pct.1.name <- "astro.astro1_CTE"
+astro.astro1_CTE.astroX_CTE$pct.2.name <- "astro.astroX_CTE"
+astro.astro1_CTE.astroX_CTE$comparison <- "within_conditions"
+astro.astro1_CTE.astroX_CTE
+#Astro2 Sub-Cluster.
+astro.astro2_CTE.astro2_control <- FindMarkers(object = astro, ident.1 = "Astro2_CTE", ident.2 = "Astro2_control", verbose = FALSE)
+astro.astro2_CTE.astro2_control <- astro.astro2_CTE.astro2_control[((astro.astro2_CTE.astro2_control$avg_logFC >= 1) | (astro.astro2_CTE.astro2_control$avg_logFC <= -1)) & (astro.astro2_CTE.astro2_control$p_val_adj <= 0.05),]
+astro.astro2_CTE.astro2_control$gene_name <- row.names(astro.astro2_CTE.astro2_control)
+astro.astro2_CTE.astro2_control <- cbind(astro.astro2_CTE.astro2_control, pct.1.name = rep(NA, length(row.names(astro.astro2_CTE.astro2_control))), pct.2.name = rep(NA, length(row.names(astro.astro2_CTE.astro2_control))), comparison = rep(NA, length(row.names(astro.astro2_CTE.astro2_control))))
+astro.astro2_CTE.astro2_control$pct.1.name <- "astro.astro2_CTE"
+astro.astro2_CTE.astro2_control$pct.2.name <- "astro.astro2_control"
+astro.astro2_CTE.astro2_control$comparison <- "between_conditions"
+astro.astro2_CTE.astro2_control
+astro.astro2_CTE.astro1_control <- FindMarkers(object = astro, ident.1 = "Astro2_CTE", ident.2 = "Astro1_control", verbose = FALSE)
+astro.astro2_CTE.astro1_control <- astro.astro2_CTE.astro1_control[((astro.astro2_CTE.astro1_control$avg_logFC >= 1) | (astro.astro2_CTE.astro1_control$avg_logFC <= -1)) & (astro.astro2_CTE.astro1_control$p_val_adj <= 0.05),]
+astro.astro2_CTE.astro1_control$gene_name <- row.names(astro.astro2_CTE.astro1_control)
+astro.astro2_CTE.astro1_control <- cbind(astro.astro2_CTE.astro1_control, pct.1.name = rep(NA, length(row.names(astro.astro2_CTE.astro1_control))), pct.2.name = rep(NA, length(row.names(astro.astro2_CTE.astro1_control))), comparison = rep(NA, length(row.names(astro.astro2_CTE.astro1_control))))
+astro.astro2_CTE.astro1_control$pct.1.name <- "astro.astro2_CTE"
+astro.astro2_CTE.astro1_control$pct.2.name <- "astro.astro1_control"
+astro.astro2_CTE.astro1_control$comparison <- "between_conditions"
+astro.astro2_CTE.astro1_control
+astro.astro2_CTE.astroX_control <- FindMarkers(object = astro, ident.1 = "Astro2_CTE", ident.2 = c("Astro1_control", "Astro2_control"), verbose = FALSE)
+astro.astro2_CTE.astroX_control <- astro.astro2_CTE.astroX_control[((astro.astro2_CTE.astroX_control$avg_logFC >= 1) | (astro.astro2_CTE.astroX_control$avg_logFC <= -1)) & (astro.astro2_CTE.astroX_control$p_val_adj <= 0.05),]
+astro.astro2_CTE.astroX_control$gene_name <- row.names(astro.astro2_CTE.astroX_control)
+astro.astro2_CTE.astroX_control <- cbind(astro.astro2_CTE.astroX_control, pct.1.name = rep(NA, length(row.names(astro.astro2_CTE.astroX_control))), pct.2.name = rep(NA, length(row.names(astro.astro2_CTE.astroX_control))), comparison = rep(NA, length(row.names(astro.astro2_CTE.astroX_control))))
+astro.astro2_CTE.astroX_control$pct.1.name <- "astro.astro2_CTE"
+astro.astro2_CTE.astroX_control$pct.2.name <- "astro.astroX_control"
+astro.astro2_CTE.astroX_control$comparison <- "between_conditions"
+astro.astro2_CTE.astroX_control
+astro.astro2_CTE.astro1_CTE <- FindMarkers(object = astro, ident.1 = "Astro2_CTE", ident.2 = "Astro1_CTE", verbose = FALSE)
+astro.astro2_CTE.astro1_CTE <- astro.astro2_CTE.astro1_CTE[((astro.astro2_CTE.astro1_CTE$avg_logFC >= 1) | (astro.astro2_CTE.astro1_CTE$avg_logFC <= -1)) & (astro.astro2_CTE.astro1_CTE$p_val_adj <= 0.05),]
+astro.astro2_CTE.astro1_CTE$gene_name <- row.names(astro.astro2_CTE.astro1_CTE)
+astro.astro2_CTE.astro1_CTE <- cbind(astro.astro2_CTE.astro1_CTE, pct.1.name = rep(NA, length(row.names(astro.astro2_CTE.astro1_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro2_CTE.astro1_CTE))), comparison = rep(NA, length(row.names(astro.astro2_CTE.astro1_CTE))))
+astro.astro2_CTE.astro1_CTE$pct.1.name <- "astro.astro2_CTE"
+astro.astro2_CTE.astro1_CTE$pct.2.name <- "astro.astro1_CTE"
+astro.astro2_CTE.astro1_CTE$comparison <- "within_conditions"
+astro.astro2_CTE.astro1_CTE
+astro.astro2_CTE.astro3_CTE <- FindMarkers(object = astro, ident.1 = "Astro2_CTE", ident.2 = "Astro3_CTE", verbose = FALSE)
+astro.astro2_CTE.astro3_CTE <- astro.astro2_CTE.astro3_CTE[((astro.astro2_CTE.astro3_CTE$avg_logFC >= 1) | (astro.astro2_CTE.astro3_CTE$avg_logFC <= -1)) & (astro.astro2_CTE.astro3_CTE$p_val_adj <= 0.05),]
+astro.astro2_CTE.astro3_CTE$gene_name <- row.names(astro.astro2_CTE.astro3_CTE)
+astro.astro2_CTE.astro3_CTE <- cbind(astro.astro2_CTE.astro3_CTE, pct.1.name = rep(NA, length(row.names(astro.astro2_CTE.astro3_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro2_CTE.astro3_CTE))), comparison = rep(NA, length(row.names(astro.astro2_CTE.astro3_CTE))))
+astro.astro2_CTE.astro3_CTE$pct.1.name <- "astro.astro2_CTE"
+astro.astro2_CTE.astro3_CTE$pct.2.name <- "astro.astro3_CTE"
+astro.astro2_CTE.astro3_CTE$comparison <- "within_conditions"
+astro.astro2_CTE.astro3_CTE
+astro.astro2_CTE.astroX_CTE <- FindMarkers(object = astro, ident.1 = "Astro2_CTE", ident.2 = c("Astro1_CTE", "Astro3_CTE"), verbose = FALSE)
+astro.astro2_CTE.astroX_CTE <- astro.astro2_CTE.astroX_CTE[((astro.astro2_CTE.astroX_CTE$avg_logFC >= 1) | (astro.astro2_CTE.astroX_CTE$avg_logFC <= -1)) & (astro.astro2_CTE.astroX_CTE$p_val_adj <= 0.05),]
+astro.astro2_CTE.astroX_CTE$gene_name <- row.names(astro.astro2_CTE.astroX_CTE)
+astro.astro2_CTE.astroX_CTE <- cbind(astro.astro2_CTE.astroX_CTE, pct.1.name = rep(NA, length(row.names(astro.astro2_CTE.astroX_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro2_CTE.astroX_CTE))), comparison = rep(NA, length(row.names(astro.astro2_CTE.astroX_CTE))))
+astro.astro2_CTE.astroX_CTE$pct.1.name <- "astro.astro2_CTE"
+astro.astro2_CTE.astroX_CTE$pct.2.name <- "astro.astroX_CTE"
+astro.astro2_CTE.astroX_CTE$comparison <- "within_conditions"
+astro.astro2_CTE.astroX_CTE
+#Astro3 Sub-Cluster.
+astro.astro3_CTE.astro1_control <- FindMarkers(object = astro, ident.1 = "Astro3_CTE", ident.2 = "Astro1_control", verbose = FALSE)
+astro.astro3_CTE.astro1_control <- astro.astro3_CTE.astro1_control[((astro.astro3_CTE.astro1_control$avg_logFC >= 1) | (astro.astro3_CTE.astro1_control$avg_logFC <= -1)) & (astro.astro3_CTE.astro1_control$p_val_adj <= 0.05),]
+astro.astro3_CTE.astro1_control$gene_name <- row.names(astro.astro3_CTE.astro1_control)
+astro.astro3_CTE.astro1_control <- cbind(astro.astro3_CTE.astro1_control, pct.1.name = rep(NA, length(row.names(astro.astro3_CTE.astro1_control))), pct.2.name = rep(NA, length(row.names(astro.astro3_CTE.astro1_control))), comparison = rep(NA, length(row.names(astro.astro3_CTE.astro1_control))))
+astro.astro3_CTE.astro1_control$pct.1.name <- "astro.astro3_CTE"
+astro.astro3_CTE.astro1_control$pct.2.name <- "astro.astro1_control"
+astro.astro3_CTE.astro1_control$comparison <- "between_conditions"
+astro.astro3_CTE.astro1_control
+astro.astro3_CTE.astro2_control <- FindMarkers(object = astro, ident.1 = "Astro3_CTE", ident.2 = "Astro2_control", verbose = FALSE)
+astro.astro3_CTE.astro2_control <- astro.astro3_CTE.astro2_control[((astro.astro3_CTE.astro2_control$avg_logFC >= 1) | (astro.astro3_CTE.astro2_control$avg_logFC <= -1)) & (astro.astro3_CTE.astro2_control$p_val_adj <= 0.05),]
+astro.astro3_CTE.astro2_control$gene_name <- row.names(astro.astro3_CTE.astro2_control)
+astro.astro3_CTE.astro2_control <- cbind(astro.astro3_CTE.astro2_control, pct.1.name = rep(NA, length(row.names(astro.astro3_CTE.astro2_control))), pct.2.name = rep(NA, length(row.names(astro.astro3_CTE.astro2_control))), comparison = rep(NA, length(row.names(astro.astro3_CTE.astro2_control))))
+astro.astro3_CTE.astro2_control$pct.1.name <- "astro.astro3_CTE"
+astro.astro3_CTE.astro2_control$pct.2.name <- "astro.astro2_control"
+astro.astro3_CTE.astro2_control$comparison <- "between_conditions"
+astro.astro3_CTE.astro2_control
+astro.astro3_CTE.astroX_control <- FindMarkers(object = astro, ident.1 = "Astro3_CTE", ident.2 = c("Astro1_control", "Astro2_control"), verbose = FALSE)
+astro.astro3_CTE.astroX_control <- astro.astro3_CTE.astroX_control[((astro.astro3_CTE.astroX_control$avg_logFC >= 1) | (astro.astro3_CTE.astroX_control$avg_logFC <= -1)) & (astro.astro3_CTE.astroX_control$p_val_adj <= 0.05),]
+astro.astro3_CTE.astroX_control$gene_name <- row.names(astro.astro3_CTE.astroX_control)
+astro.astro3_CTE.astroX_control <- cbind(astro.astro3_CTE.astroX_control, pct.1.name = rep(NA, length(row.names(astro.astro3_CTE.astroX_control))), pct.2.name = rep(NA, length(row.names(astro.astro3_CTE.astroX_control))), comparison = rep(NA, length(row.names(astro.astro3_CTE.astroX_control))))
+astro.astro3_CTE.astroX_control$pct.1.name <- "astro.astro3_CTE"
+astro.astro3_CTE.astroX_control$pct.2.name <- "astro.astroX_control"
+astro.astro3_CTE.astroX_control$comparison <- "between_conditions"
+astro.astro3_CTE.astroX_control
+astro.astro3_CTE.astro1_CTE <- FindMarkers(object = astro, ident.1 = "Astro3_CTE", ident.2 = "Astro1_CTE", verbose = FALSE)
+astro.astro3_CTE.astro1_CTE <- astro.astro3_CTE.astro1_CTE[((astro.astro3_CTE.astro1_CTE$avg_logFC >= 1) | (astro.astro3_CTE.astro1_CTE$avg_logFC <= -1)) & (astro.astro3_CTE.astro1_CTE$p_val_adj <= 0.05),]
+astro.astro3_CTE.astro1_CTE$gene_name <- row.names(astro.astro3_CTE.astro1_CTE)
+astro.astro3_CTE.astro1_CTE <- cbind(astro.astro3_CTE.astro1_CTE, pct.1.name = rep(NA, length(row.names(astro.astro3_CTE.astro1_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro3_CTE.astro1_CTE))), comparison = rep(NA, length(row.names(astro.astro3_CTE.astro1_CTE))))
+astro.astro3_CTE.astro1_CTE$pct.1.name <- "astro.astro3_CTE"
+astro.astro3_CTE.astro1_CTE$pct.2.name <- "astro.astro1_CTE"
+astro.astro3_CTE.astro1_CTE$comparison <- "within_conditions"
+astro.astro3_CTE.astro1_CTE
+astro.astro3_CTE.astro2_CTE <- FindMarkers(object = astro, ident.1 = "Astro3_CTE", ident.2 = "Astro2_CTE", verbose = FALSE)
+astro.astro3_CTE.astro2_CTE <- astro.astro3_CTE.astro2_CTE[((astro.astro3_CTE.astro2_CTE$avg_logFC >= 1) | (astro.astro3_CTE.astro2_CTE$avg_logFC <= -1)) & (astro.astro3_CTE.astro2_CTE$p_val_adj <= 0.05),]
+astro.astro3_CTE.astro2_CTE$gene_name <- row.names(astro.astro3_CTE.astro2_CTE)
+astro.astro3_CTE.astro2_CTE <- cbind(astro.astro3_CTE.astro2_CTE, pct.1.name = rep(NA, length(row.names(astro.astro3_CTE.astro2_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro3_CTE.astro2_CTE))), comparison = rep(NA, length(row.names(astro.astro3_CTE.astro2_CTE))))
+astro.astro3_CTE.astro2_CTE$pct.1.name <- "astro.astro3_CTE"
+astro.astro3_CTE.astro2_CTE$pct.2.name <- "astro.astro2_CTE"
+astro.astro3_CTE.astro2_CTE$comparison <- "within_conditions"
+astro.astro3_CTE.astro2_CTE
+astro.astro3_CTE.astroX_CTE <- FindMarkers(object = astro, ident.1 = "Astro3_CTE", ident.2 = c("Astro1_CTE", "Astro2_CTE"), verbose = FALSE)
+astro.astro3_CTE.astroX_CTE <- astro.astro3_CTE.astroX_CTE[((astro.astro3_CTE.astroX_CTE$avg_logFC >= 1) | (astro.astro3_CTE.astroX_CTE$avg_logFC <= -1)) & (astro.astro3_CTE.astroX_CTE$p_val_adj <= 0.05),]
+astro.astro3_CTE.astroX_CTE$gene_name <- row.names(astro.astro3_CTE.astroX_CTE)
+astro.astro3_CTE.astroX_CTE <- cbind(astro.astro3_CTE.astroX_CTE, pct.1.name = rep(NA, length(row.names(astro.astro3_CTE.astroX_CTE))), pct.2.name = rep(NA, length(row.names(astro.astro3_CTE.astroX_CTE))), comparison = rep(NA, length(row.names(astro.astro3_CTE.astroX_CTE))))
+astro.astro3_CTE.astroX_CTE$pct.1.name <- "astro.astro3_CTE"
+astro.astro3_CTE.astroX_CTE$pct.2.name <- "astro.astroX_CTE"
+astro.astro3_CTE.astroX_CTE$comparison <- "within_conditions"
+astro.astro3_CTE.astroX_CTE
+
+#Get all differentially expressed genes.
+astro_diff_genes <- rbind(astro.astro1_CTE.astro1_control, astro.astro1_CTE.astro2_control, astro.astro1_CTE.astroX_control, astro.astro1_CTE.astro2_CTE, astro.astro1_CTE.astro3_CTE, astro.astro1_CTE.astroX_CTE, astro.astro2_CTE.astro2_control, astro.astro2_CTE.astro1_control, astro.astro2_CTE.astroX_control, astro.astro2_CTE.astro1_CTE, astro.astro2_CTE.astro3_CTE, astro.astro2_CTE.astroX_CTE, astro.astro3_CTE.astro1_control, astro.astro3_CTE.astro2_control, astro.astro3_CTE.astroX_control, astro.astro3_CTE.astro1_CTE, astro.astro3_CTE.astro2_CTE, astro.astro3_CTE.astroX_CTE)
+row.names(astro_diff_genes) <- astro_diff_genes$gene_name
+astro_diff_genes$subset <- "astro"
+write.csv(astro_diff_genes, file = "2019-06-30_CTEAstroGenes_JEDC")
+
+
+#---------- Neurons ----------
+
+
+#Subset neurons.
+neuron <- SubsetData(object = CTE.combined, ident.use = c("Neuron_CTE", "Neuron_control"), do.clean = TRUE, do.scale = TRUE)
+
+#Perform basic analysis and visualization.
+neuron <- FindVariableFeatures(object = neuron, selection.method = "vst", nfeatures = 2000)
+neuron <- ScaleData(object = neuron, verbose = FALSE)
+neuron <- RunPCA(object = neuron, npcs = 10, verbose = FALSE)
+neuron <- RunUMAP(object = neuron, reduction = "pca", dims = 1:10)
+neuron <- FindNeighbors(object = neuron, reduction = "pca", dims = 1:10)
+neuron <- FindClusters(neuron, resolution = 0.4)
+p1 <- DimPlot(object = neuron, reduction = "umap", group.by = "condition")
+p2 <- DimPlot(object = neuron, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+DimPlot(object = neuron, reduction = "umap", split.by = "condition")
+
+#Find marker genes.
+neuron.markers <- FindAllMarkers(object = neuron, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+neuron.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_logFC)
+
+#Rename cluster identities and re-visualize.
+neuron <- RenameIdents(object = neuron, `0` = "Neuron1", `1` = "Neuron2", `2` = "Neuron3")
+Idents(object = neuron) <- factor(x = Idents(object = neuron), levels = c("Neuron1", "Neuron2", "Neuron3"))
+DimPlot(object = neuron, reduction = "umap", split.by = "condition", label = TRUE)
+
+#Add meta-data.
+neuron$celltype.condition <- paste(Idents(object = neuron), neuron$condition, sep = "_")
+neuron$celltype <- Idents(object = neuron)
+Idents(object = neuron) <- "celltype.condition"
+
+#Quantify cell counts by condition per cell type.
+table(neuron@meta.data$celltype.condition)
+
+#Perform differential gene expression analysis by cell type and add comparison meta-data.
+#Neuron1 Sub-Cluster.
+neuron.neuron1_CTE.neuron1_control <- FindMarkers(object = neuron, ident.1 = "Neuron1_CTE", ident.2 = "Neuron1_control", verbose = FALSE)
+neuron.neuron1_CTE.neuron1_control <- neuron.neuron1_CTE.neuron1_control[((neuron.neuron1_CTE.neuron1_control$avg_logFC >= 1) | (neuron.neuron1_CTE.neuron1_control$avg_logFC <= -1)) & (neuron.neuron1_CTE.neuron1_control$p_val_adj <= 0.05),]
+neuron.neuron1_CTE.neuron1_control$gene_name <- row.names(neuron.neuron1_CTE.neuron1_control)
+neuron.neuron1_CTE.neuron1_control <- cbind(neuron.neuron1_CTE.neuron1_control, pct.1.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron1_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron1_control))), comparison = rep(NA, length(row.names(neuron.neuron1_CTE.neuron1_control))))
+neuron.neuron1_CTE.neuron1_control$pct.1.name <- "neuron.neuron1_CTE"
+neuron.neuron1_CTE.neuron1_control$pct.2.name <- "neuron.neuron1_control"
+neuron.neuron1_CTE.neuron1_control$comparison <- "between_conditions"
+neuron.neuron1_CTE.neuron1_control
+neuron.neuron1_CTE.neuron2_control <- FindMarkers(object = neuron, ident.1 = "Neuron1_CTE", ident.2 = "Neuron2_control", verbose = FALSE)
+neuron.neuron1_CTE.neuron2_control <- neuron.neuron1_CTE.neuron2_control[((neuron.neuron1_CTE.neuron2_control$avg_logFC >= 1) | (neuron.neuron1_CTE.neuron2_control$avg_logFC <= -1)) & (neuron.neuron1_CTE.neuron2_control$p_val_adj <= 0.05),]
+neuron.neuron1_CTE.neuron2_control$gene_name <- row.names(neuron.neuron1_CTE.neuron2_control)
+neuron.neuron1_CTE.neuron2_control <- cbind(neuron.neuron1_CTE.neuron2_control, pct.1.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron2_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron2_control))), comparison = rep(NA, length(row.names(neuron.neuron1_CTE.neuron2_control))))
+neuron.neuron1_CTE.neuron2_control$pct.1.name <- "neuron.neuron1_CTE"
+neuron.neuron1_CTE.neuron2_control$pct.2.name <- "neuron.neuron2_control"
+neuron.neuron1_CTE.neuron2_control$comparison <- "between_conditions"
+neuron.neuron1_CTE.neuron2_control
+neuron.neuron1_CTE.neuronX_control <- FindMarkers(object = neuron, ident.1 = "Neuron1_CTE", ident.2 = c("Neuron1_control", "Neuron2_control"), verbose = FALSE)
+neuron.neuron1_CTE.neuronX_control <- neuron.neuron1_CTE.neuronX_control[((neuron.neuron1_CTE.neuronX_control$avg_logFC >= 1) | (neuron.neuron1_CTE.neuronX_control$avg_logFC <= -1)) & (neuron.neuron1_CTE.neuronX_control$p_val_adj <= 0.05),]
+neuron.neuron1_CTE.neuronX_control$gene_name <- row.names(neuron.neuron1_CTE.neuronX_control)
+neuron.neuron1_CTE.neuronX_control <- cbind(neuron.neuron1_CTE.neuronX_control, pct.1.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuronX_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuronX_control))), comparison = rep(NA, length(row.names(neuron.neuron1_CTE.neuronX_control))))
+neuron.neuron1_CTE.neuronX_control$pct.1.name <- "neuron.neuron1_CTE"
+neuron.neuron1_CTE.neuronX_control$pct.2.name <- "neuron.neuronX_control"
+neuron.neuron1_CTE.neuronX_control$comparison <- "between_conditions"
+neuron.neuron1_CTE.neuronX_control
+neuron.neuron1_CTE.neuron2_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron1_CTE", ident.2 = "Neuron2_CTE", verbose = FALSE)
+neuron.neuron1_CTE.neuron2_CTE <- neuron.neuron1_CTE.neuron2_CTE[((neuron.neuron1_CTE.neuron2_CTE$avg_logFC >= 1) | (neuron.neuron1_CTE.neuron2_CTE$avg_logFC <= -1)) & (neuron.neuron1_CTE.neuron2_CTE$p_val_adj <= 0.05),]
+neuron.neuron1_CTE.neuron2_CTE$gene_name <- row.names(neuron.neuron1_CTE.neuron2_CTE)
+neuron.neuron1_CTE.neuron2_CTE <- cbind(neuron.neuron1_CTE.neuron2_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron2_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron2_CTE))), comparison = rep(NA, length(row.names(neuron.neuron1_CTE.neuron2_CTE))))
+neuron.neuron1_CTE.neuron2_CTE$pct.1.name <- "neuron.neuron1_CTE"
+neuron.neuron1_CTE.neuron2_CTE$pct.2.name <- "neuron.neuron2_CTE"
+neuron.neuron1_CTE.neuron2_CTE$comparison <- "within_conditions"
+neuron.neuron1_CTE.neuron2_CTE
+neuron.neuron1_CTE.neuron3_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron1_CTE", ident.2 = "Neuron3_CTE", verbose = FALSE)
+neuron.neuron1_CTE.neuron3_CTE <- neuron.neuron1_CTE.neuron3_CTE[((neuron.neuron1_CTE.neuron3_CTE$avg_logFC >= 1) | (neuron.neuron1_CTE.neuron3_CTE$avg_logFC <= -1)) & (neuron.neuron1_CTE.neuron3_CTE$p_val_adj <= 0.05),]
+neuron.neuron1_CTE.neuron3_CTE$gene_name <- row.names(neuron.neuron1_CTE.neuron3_CTE)
+neuron.neuron1_CTE.neuron3_CTE <- cbind(neuron.neuron1_CTE.neuron3_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron3_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuron3_CTE))), comparison = rep(NA, length(row.names(neuron.neuron1_CTE.neuron3_CTE))))
+neuron.neuron1_CTE.neuron3_CTE$pct.1.name <- "neuron.neuron1_CTE"
+neuron.neuron1_CTE.neuron3_CTE$pct.2.name <- "neuron.neuron3_CTE"
+neuron.neuron1_CTE.neuron3_CTE$comparison <- "within_conditions"
+neuron.neuron1_CTE.neuron3_CTE
+neuron.neuron1_CTE.neuronX_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron1_CTE", ident.2 = c("Neuron2_CTE", "Neuron3_CTE"), verbose = FALSE)
+neuron.neuron1_CTE.neuronX_CTE <- neuron.neuron1_CTE.neuronX_CTE[((neuron.neuron1_CTE.neuronX_CTE$avg_logFC >= 1) | (neuron.neuron1_CTE.neuronX_CTE$avg_logFC <= -1)) & (neuron.neuron1_CTE.neuronX_CTE$p_val_adj <= 0.05),]
+neuron.neuron1_CTE.neuronX_CTE$gene_name <- row.names(neuron.neuron1_CTE.neuronX_CTE)
+neuron.neuron1_CTE.neuronX_CTE <- cbind(neuron.neuron1_CTE.neuronX_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuronX_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron1_CTE.neuronX_CTE))), comparison = rep(NA, length(row.names(neuron.neuron1_CTE.neuronX_CTE))))
+neuron.neuron1_CTE.neuronX_CTE$pct.1.name <- "neuron.neuron1_CTE"
+neuron.neuron1_CTE.neuronX_CTE$pct.2.name <- "neuron.neuronX_CTE"
+neuron.neuron1_CTE.neuronX_CTE$comparison <- "within_conditions"
+neuron.neuron1_CTE.neuronX_CTE
+#Neuron2 Sub-Cluster.
+neuron.neuron2_CTE.neuron2_control <- FindMarkers(object = neuron, ident.1 = "Neuron2_CTE", ident.2 = "Neuron2_control", verbose = FALSE)
+neuron.neuron2_CTE.neuron2_control <- neuron.neuron2_CTE.neuron2_control[((neuron.neuron2_CTE.neuron2_control$avg_logFC >= 1) | (neuron.neuron2_CTE.neuron2_control$avg_logFC <= -1)) & (neuron.neuron2_CTE.neuron2_control$p_val_adj <= 0.05),]
+neuron.neuron2_CTE.neuron2_control$gene_name <- row.names(neuron.neuron2_CTE.neuron2_control)
+neuron.neuron2_CTE.neuron2_control <- cbind(neuron.neuron2_CTE.neuron2_control, pct.1.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron2_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron2_control))), comparison = rep(NA, length(row.names(neuron.neuron2_CTE.neuron2_control))))
+neuron.neuron2_CTE.neuron2_control$pct.1.name <- "neuron.neuron2_CTE"
+neuron.neuron2_CTE.neuron2_control$pct.2.name <- "neuron.neuron2_control"
+neuron.neuron2_CTE.neuron2_control$comparison <- "between_conditions"
+neuron.neuron2_CTE.neuron2_control
+neuron.neuron2_CTE.neuron1_control <- FindMarkers(object = neuron, ident.1 = "Neuron2_CTE", ident.2 = "Neuron1_control", verbose = FALSE)
+neuron.neuron2_CTE.neuron1_control <- neuron.neuron2_CTE.neuron1_control[((neuron.neuron2_CTE.neuron1_control$avg_logFC >= 1) | (neuron.neuron2_CTE.neuron1_control$avg_logFC <= -1)) & (neuron.neuron2_CTE.neuron1_control$p_val_adj <= 0.05),]
+neuron.neuron2_CTE.neuron1_control$gene_name <- row.names(neuron.neuron2_CTE.neuron1_control)
+neuron.neuron2_CTE.neuron1_control <- cbind(neuron.neuron2_CTE.neuron1_control, pct.1.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron1_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron1_control))), comparison = rep(NA, length(row.names(neuron.neuron2_CTE.neuron1_control))))
+neuron.neuron2_CTE.neuron1_control$pct.1.name <- "neuron.neuron2_CTE"
+neuron.neuron2_CTE.neuron1_control$pct.2.name <- "neuron.neuron1_control"
+neuron.neuron2_CTE.neuron1_control$comparison <- "between_conditions"
+neuron.neuron2_CTE.neuron1_control
+neuron.neuron2_CTE.neuronX_control <- FindMarkers(object = neuron, ident.1 = "Neuron2_CTE", ident.2 = c("Neuron1_control", "Neuron2_control"), verbose = FALSE)
+neuron.neuron2_CTE.neuronX_control <- neuron.neuron2_CTE.neuronX_control[((neuron.neuron2_CTE.neuronX_control$avg_logFC >= 1) | (neuron.neuron2_CTE.neuronX_control$avg_logFC <= -1)) & (neuron.neuron2_CTE.neuronX_control$p_val_adj <= 0.05),]
+neuron.neuron2_CTE.neuronX_control$gene_name <- row.names(neuron.neuron2_CTE.neuronX_control)
+neuron.neuron2_CTE.neuronX_control <- cbind(neuron.neuron2_CTE.neuronX_control, pct.1.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuronX_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuronX_control))), comparison = rep(NA, length(row.names(neuron.neuron2_CTE.neuronX_control))))
+neuron.neuron2_CTE.neuronX_control$pct.1.name <- "neuron.neuron2_CTE"
+neuron.neuron2_CTE.neuronX_control$pct.2.name <- "neuron.neuronX_control"
+neuron.neuron2_CTE.neuronX_control$comparison <- "between_conditions"
+neuron.neuron2_CTE.neuronX_control
+neuron.neuron2_CTE.neuron1_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron2_CTE", ident.2 = "Neuron1_CTE", verbose = FALSE)
+neuron.neuron2_CTE.neuron1_CTE <- neuron.neuron2_CTE.neuron1_CTE[((neuron.neuron2_CTE.neuron1_CTE$avg_logFC >= 1) | (neuron.neuron2_CTE.neuron1_CTE$avg_logFC <= -1)) & (neuron.neuron2_CTE.neuron1_CTE$p_val_adj <= 0.05),]
+neuron.neuron2_CTE.neuron1_CTE$gene_name <- row.names(neuron.neuron2_CTE.neuron1_CTE)
+neuron.neuron2_CTE.neuron1_CTE <- cbind(neuron.neuron2_CTE.neuron1_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron1_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron1_CTE))), comparison = rep(NA, length(row.names(neuron.neuron2_CTE.neuron1_CTE))))
+neuron.neuron2_CTE.neuron1_CTE$pct.1.name <- "neuron.neuron2_CTE"
+neuron.neuron2_CTE.neuron1_CTE$pct.2.name <- "neuron.neuron1_CTE"
+neuron.neuron2_CTE.neuron1_CTE$comparison <- "within_conditions"
+neuron.neuron2_CTE.neuron1_CTE
+neuron.neuron2_CTE.neuron3_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron2_CTE", ident.2 = "Neuron3_CTE", verbose = FALSE)
+neuron.neuron2_CTE.neuron3_CTE <- neuron.neuron2_CTE.neuron3_CTE[((neuron.neuron2_CTE.neuron3_CTE$avg_logFC >= 1) | (neuron.neuron2_CTE.neuron3_CTE$avg_logFC <= -1)) & (neuron.neuron2_CTE.neuron3_CTE$p_val_adj <= 0.05),]
+neuron.neuron2_CTE.neuron3_CTE$gene_name <- row.names(neuron.neuron2_CTE.neuron3_CTE)
+neuron.neuron2_CTE.neuron3_CTE <- cbind(neuron.neuron2_CTE.neuron3_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron3_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuron3_CTE))), comparison = rep(NA, length(row.names(neuron.neuron2_CTE.neuron3_CTE))))
+neuron.neuron2_CTE.neuron3_CTE$pct.1.name <- "neuron.neuron2_CTE"
+neuron.neuron2_CTE.neuron3_CTE$pct.2.name <- "neuron.neuron3_CTE"
+neuron.neuron2_CTE.neuron3_CTE$comparison <- "within_conditions"
+neuron.neuron2_CTE.neuron3_CTE
+neuron.neuron2_CTE.neuronX_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron2_CTE", ident.2 = c("Neuron1_CTE", "Neuron3_CTE"), verbose = FALSE)
+neuron.neuron2_CTE.neuronX_CTE <- neuron.neuron2_CTE.neuronX_CTE[((neuron.neuron2_CTE.neuronX_CTE$avg_logFC >= 1) | (neuron.neuron2_CTE.neuronX_CTE$avg_logFC <= -1)) & (neuron.neuron2_CTE.neuronX_CTE$p_val_adj <= 0.05),]
+neuron.neuron2_CTE.neuronX_CTE$gene_name <- row.names(neuron.neuron2_CTE.neuronX_CTE)
+neuron.neuron2_CTE.neuronX_CTE <- cbind(neuron.neuron2_CTE.neuronX_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuronX_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron2_CTE.neuronX_CTE))), comparison = rep(NA, length(row.names(neuron.neuron2_CTE.neuronX_CTE))))
+neuron.neuron2_CTE.neuronX_CTE$pct.1.name <- "neuron.neuron2_CTE"
+neuron.neuron2_CTE.neuronX_CTE$pct.2.name <- "neuron.neuronX_CTE"
+neuron.neuron2_CTE.neuronX_CTE$comparison <- "within_conditions"
+neuron.neuron2_CTE.neuronX_CTE
+#Neuron3 Sub-Cluster.
+neuron.neuron3_CTE.neuron1_control <- FindMarkers(object = neuron, ident.1 = "Neuron3_CTE", ident.2 = "Neuron1_control", verbose = FALSE)
+neuron.neuron3_CTE.neuron1_control <- neuron.neuron3_CTE.neuron1_control[((neuron.neuron3_CTE.neuron1_control$avg_logFC >= 1) | (neuron.neuron3_CTE.neuron1_control$avg_logFC <= -1)) & (neuron.neuron3_CTE.neuron1_control$p_val_adj <= 0.05),]
+neuron.neuron3_CTE.neuron1_control$gene_name <- row.names(neuron.neuron3_CTE.neuron1_control)
+neuron.neuron3_CTE.neuron1_control <- cbind(neuron.neuron3_CTE.neuron1_control, pct.1.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron1_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron1_control))), comparison = rep(NA, length(row.names(neuron.neuron3_CTE.neuron1_control))))
+neuron.neuron3_CTE.neuron1_control$pct.1.name <- "neuron.neuron3_CTE"
+neuron.neuron3_CTE.neuron1_control$pct.2.name <- "neuron.neuron1_control"
+neuron.neuron3_CTE.neuron1_control$comparison <- "between_conditions"
+neuron.neuron3_CTE.neuron1_control
+neuron.neuron3_CTE.neuron2_control <- FindMarkers(object = neuron, ident.1 = "Neuron3_CTE", ident.2 = "Neuron2_control", verbose = FALSE)
+neuron.neuron3_CTE.neuron2_control <- neuron.neuron3_CTE.neuron2_control[((neuron.neuron3_CTE.neuron2_control$avg_logFC >= 1) | (neuron.neuron3_CTE.neuron2_control$avg_logFC <= -1)) & (neuron.neuron3_CTE.neuron2_control$p_val_adj <= 0.05),]
+neuron.neuron3_CTE.neuron2_control$gene_name <- row.names(neuron.neuron3_CTE.neuron2_control)
+neuron.neuron3_CTE.neuron2_control <- cbind(neuron.neuron3_CTE.neuron2_control, pct.1.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron2_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron2_control))), comparison = rep(NA, length(row.names(neuron.neuron3_CTE.neuron2_control))))
+neuron.neuron3_CTE.neuron2_control$pct.1.name <- "neuron.neuron3_CTE"
+neuron.neuron3_CTE.neuron2_control$pct.2.name <- "neuron.neuron2_control"
+neuron.neuron3_CTE.neuron2_control$comparison <- "between_conditions"
+neuron.neuron3_CTE.neuron2_control
+neuron.neuron3_CTE.neuronX_control <- FindMarkers(object = neuron, ident.1 = "Neuron3_CTE", ident.2 = c("Neuron1_control", "Neuron2_control"), verbose = FALSE)
+neuron.neuron3_CTE.neuronX_control <- neuron.neuron3_CTE.neuronX_control[((neuron.neuron3_CTE.neuronX_control$avg_logFC >= 1) | (neuron.neuron3_CTE.neuronX_control$avg_logFC <= -1)) & (neuron.neuron3_CTE.neuronX_control$p_val_adj <= 0.05),]
+neuron.neuron3_CTE.neuronX_control$gene_name <- row.names(neuron.neuron3_CTE.neuronX_control)
+neuron.neuron3_CTE.neuronX_control <- cbind(neuron.neuron3_CTE.neuronX_control, pct.1.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuronX_control))), pct.2.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuronX_control))), comparison = rep(NA, length(row.names(neuron.neuron3_CTE.neuronX_control))))
+neuron.neuron3_CTE.neuronX_control$pct.1.name <- "neuron.neuron3_CTE"
+neuron.neuron3_CTE.neuronX_control$pct.2.name <- "neuron.neuronX_control"
+neuron.neuron3_CTE.neuronX_control$comparison <- "between_conditions"
+neuron.neuron3_CTE.neuronX_control
+neuron.neuron3_CTE.neuron1_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron3_CTE", ident.2 = "Neuron1_CTE", verbose = FALSE)
+neuron.neuron3_CTE.neuron1_CTE <- neuron.neuron3_CTE.neuron1_CTE[((neuron.neuron3_CTE.neuron1_CTE$avg_logFC >= 1) | (neuron.neuron3_CTE.neuron1_CTE$avg_logFC <= -1)) & (neuron.neuron3_CTE.neuron1_CTE$p_val_adj <= 0.05),]
+neuron.neuron3_CTE.neuron1_CTE$gene_name <- row.names(neuron.neuron3_CTE.neuron1_CTE)
+neuron.neuron3_CTE.neuron1_CTE <- cbind(neuron.neuron3_CTE.neuron1_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron1_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron1_CTE))), comparison = rep(NA, length(row.names(neuron.neuron3_CTE.neuron1_CTE))))
+neuron.neuron3_CTE.neuron1_CTE$pct.1.name <- "neuron.neuron3_CTE"
+neuron.neuron3_CTE.neuron1_CTE$pct.2.name <- "neuron.neuron1_CTE"
+neuron.neuron3_CTE.neuron1_CTE$comparison <- "within_conditions"
+neuron.neuron3_CTE.neuron1_CTE
+neuron.neuron3_CTE.neuron2_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron3_CTE", ident.2 = "Neuron2_CTE", verbose = FALSE)
+neuron.neuron3_CTE.neuron2_CTE <- neuron.neuron3_CTE.neuron2_CTE[((neuron.neuron3_CTE.neuron2_CTE$avg_logFC >= 1) | (neuron.neuron3_CTE.neuron2_CTE$avg_logFC <= -1)) & (neuron.neuron3_CTE.neuron2_CTE$p_val_adj <= 0.05),]
+neuron.neuron3_CTE.neuron2_CTE$gene_name <- row.names(neuron.neuron3_CTE.neuron2_CTE)
+neuron.neuron3_CTE.neuron2_CTE <- cbind(neuron.neuron3_CTE.neuron2_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron2_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuron2_CTE))), comparison = rep(NA, length(row.names(neuron.neuron3_CTE.neuron2_CTE))))
+neuron.neuron3_CTE.neuron2_CTE$pct.1.name <- "neuron.neuron3_CTE"
+neuron.neuron3_CTE.neuron2_CTE$pct.2.name <- "neuron.neuron2_CTE"
+neuron.neuron3_CTE.neuron2_CTE$comparison <- "within_conditions"
+neuron.neuron3_CTE.neuron2_CTE
+neuron.neuron3_CTE.neuronX_CTE <- FindMarkers(object = neuron, ident.1 = "Neuron3_CTE", ident.2 = c("Neuron1_CTE", "Neuron2_CTE"), verbose = FALSE)
+neuron.neuron3_CTE.neuronX_CTE <- neuron.neuron3_CTE.neuronX_CTE[((neuron.neuron3_CTE.neuronX_CTE$avg_logFC >= 1) | (neuron.neuron3_CTE.neuronX_CTE$avg_logFC <= -1)) & (neuron.neuron3_CTE.neuronX_CTE$p_val_adj <= 0.05),]
+neuron.neuron3_CTE.neuronX_CTE$gene_name <- row.names(neuron.neuron3_CTE.neuronX_CTE)
+neuron.neuron3_CTE.neuronX_CTE <- cbind(neuron.neuron3_CTE.neuronX_CTE, pct.1.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuronX_CTE))), pct.2.name = rep(NA, length(row.names(neuron.neuron3_CTE.neuronX_CTE))), comparison = rep(NA, length(row.names(neuron.neuron3_CTE.neuronX_CTE))))
+neuron.neuron3_CTE.neuronX_CTE$pct.1.name <- "neuron.neuron3_CTE"
+neuron.neuron3_CTE.neuronX_CTE$pct.2.name <- "neuron.neuronX_CTE"
+neuron.neuron3_CTE.neuronX_CTE$comparison <- "within_conditions"
+neuron.neuron3_CTE.neuronX_CTE
+
+#Get all differentially expressed genes.
+neuron_diff_genes <- rbind(neuron.neuron1_CTE.neuron1_control, neuron.neuron1_CTE.neuron2_control, neuron.neuron1_CTE.neuronX_control, neuron.neuron1_CTE.neuron2_CTE, neuron.neuron1_CTE.neuron3_CTE, neuron.neuron1_CTE.neuronX_CTE, neuron.neuron2_CTE.neuron2_control, neuron.neuron2_CTE.neuron1_control, neuron.neuron2_CTE.neuronX_control, neuron.neuron2_CTE.neuron1_CTE, neuron.neuron2_CTE.neuron3_CTE, neuron.neuron2_CTE.neuronX_CTE, neuron.neuron3_CTE.neuron1_control, neuron.neuron3_CTE.neuron2_control, neuron.neuron3_CTE.neuronX_control, neuron.neuron3_CTE.neuron1_CTE, neuron.neuron3_CTE.neuron2_CTE, neuron.neuron3_CTE.neuronX_CTE)
+row.names(neuron_diff_genes) <- neuron_diff_genes$gene_name
+neuron_diff_genes$subset <- "neuron"
+write.csv(neuron_diff_genes, file = "2019-06-30_CTENeuronGenes_JEDC")
+
+
+#---------- Final ----------
+
+
+#Get all differentially expressed genes.
+all_diff_genes <- rbind(int_diff_genes, OPC_diff_genes, OL_diff_genes, astro_diff_genes, neuron_diff_genes)
+row.names(all_diff_genes) <- all_diff_genes$gene_name
+write.csv(all_diff_genes, file = "2019-06-30_CTEAllGenes_JEDC")
+
+
+#---------- Extras ----------
+
+
+#Single gene dot plot.
+markers.to.plot <- c("_____")
+DotPlot(object = CTE.combined, features = rev(x = markers.to.plot), col = c("blue", "red"), dot.scale = 8, split.by = "condition") + RotatedAxis()
