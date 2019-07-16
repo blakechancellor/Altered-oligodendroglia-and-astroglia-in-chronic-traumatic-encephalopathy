@@ -52,14 +52,14 @@ STAR --runThreadN 1 \
 module load gcc/6.2.0 
 module load star/2.7.0f
 STAR --genomeDir /n/groups/gray/Blake/genomes/STAR/hg38 \
---readFilesIn /n/groups/gray/Blake/CTE_1/fastq/tagged_fastq/ \
---outFileNamePrefix /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/K117_1/ \
+--readFilesIn /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/CAGTTATG_L5864_3/CAGTTATG_L001_R1.fastq.tagged.1.fastq.gz /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/CAGTTATG_L5864_3/CAGTTATG_L001_R1.fastq.tagged.2.fastq.gz /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/CAGTTATG_L5864_3/CAGTTATG_L001_R1.fastq.tagged.3.fastq.gz /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/CAGTTATG_L5864_3/CAGTTATG_L001_R1.fastq.tagged.4.fastq.gz \
+--outFileNamePrefix /n/groups/gray/Blake/CTE_1/fastq/demultiplexed/ \
 --runThreadN 2 \
 --outSAMmultNmax 1 \
 --readNameSeparator space \
 --outSAMunmapped Within \
 --outSAMtype BAM SortedByCoordinate \
---readFilesCommand zcat """ )
+--readFilesCommand zcat 
 
 #Step 6. Run dropEst 
 
