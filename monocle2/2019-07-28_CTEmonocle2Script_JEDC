@@ -1,0 +1,309 @@
+#This script assumes a Seurat analysis has been done.
+#If not, initial data must be loaded according to the monocle2 vignette.
+
+#View monocle vignette.
+browseVignettes("monocle")
+
+
+#---------- Initiation ----------
+
+
+#Load packages
+library(monocle)
+
+#Extract count data, phenotype data, and feature data from the Seurat Object.
+counts.data <- as(as.matrix(CTE.combined@assays$RNA@data), 'sparseMatrix')
+pheno.data <- new('AnnotatedDataFrame', data = CTE.combined@meta.data)
+feature.data <- data.frame(gene_short_name = row.names(counts.data), row.names = row.names(counts.data))
+feature.data <- new('AnnotatedDataFrame', data = feature.data)
+
+#Construct a CellDataSet.
+cds <- newCellDataSet(counts.data, phenoData = pheno.data, featureData = feature.data, lowerDetectionLimit = 0.5, expressionFamily = negbinomial.size())
+
+#Filter low quality cells by removing outliers (+/- 2 S.D. away from the mean) in regard to UMI count.
+pData(cds)$total_mRNAs <- Matrix::colSums(exprs(cds))
+cds <- cds[,pData(cds)$total_mRNAs < 1e6]
+upper_bound <- 10^(mean(log10(pData(cds)$total_mRNAs)) + 2*sd(log10(pData(cds)$total_mRNAs)))
+lower_bound <- 10^(mean(log10(pData(cds)$total_mRNAs)) - 2*sd(log10(pData(cds)$total_mRNAs)))
+cds <- cds[,pData(cds)$total_mRNAs > lower_bound & pData(cds)$total_mRNAs < upper_bound]
+cds <- detectGenes(cds, min_expr = 0.1)
+
+#Estimate size factors and dispersions.
+cds <- estimateSizeFactors(cds)
+cds <-  estimateDispersions(cds)
+
+#Detect all genes that are expressed at least once.
+cds <- detectGenes(cds, min_expr = 1)
+
+#Get all genes that are expressed in at least 10 cells.
+expressed_genes <- row.names(subset(fData(cds_OLL_control), num_cells_expressed >= 10))
+
+
+#---------- Clustering ----------
+
+
+#Set marker genes.
+#OPC markers.
+PDGFRA_id <- row.names(subset(fData(cds), gene_short_name == "PDGFRA"))
+VCAN_id <- row.names(subset(fData(cds), gene_short_name == "VCAN"))
+#OL markers.
+CLDN11_id <- row.names(subset(fData(cds), gene_short_name == "CLDN11"))
+MBP_id <- row.names(subset(fData(cds), gene_short_name == "MBP"))
+MOG_id <- row.names(subset(fData(cds), gene_short_name == "MOG"))
+OPALIN_id <- row.names(subset(fData(cds), gene_short_name == "OPALIN"))
+PLP1_id <- row.names(subset(fData(cds), gene_short_name == "PLP1"))
+#Astrocyte markers.
+ALDH1L1_id <- row.names(subset(fData(cds), gene_short_name == "ALDH1L1"))
+ALDOC_id <- row.names(subset(fData(cds), gene_short_name == "ALDOC"))
+AQP4_id <- row.names(subset(fData(cds), gene_short_name == "AQP4"))
+GFAP_id <- row.names(subset(fData(cds), gene_short_name == "GFAP"))
+GJA1_id <- row.names(subset(fData(cds), gene_short_name == "GJA1"))
+SLC1A2_id <- row.names(subset(fData(cds), gene_short_name == "SLC1A2"))
+SLC1A3_id <- row.names(subset(fData(cds), gene_short_name == "SLC1A3"))
+SLC6A11_id <- row.names(subset(fData(cds), gene_short_name == "SLC6A11"))
+#Neuron markers.
+ADCYAP1_id <- row.names(subset(fData(cds), gene_short_name == "ADCYAP1"))
+COCH_id <- row.names(subset(fData(cds), gene_short_name == "COCH"))
+CRH_id <- row.names(subset(fData(cds), gene_short_name == "CRH"))
+GAD1_id <- row.names(subset(fData(cds), gene_short_name == "GAD1"))
+GAD2_id <- row.names(subset(fData(cds), gene_short_name == "GAD2"))
+GRIN1_id <- row.names(subset(fData(cds), gene_short_name == "GRIN1"))
+GRIN2A_id <- row.names(subset(fData(cds), gene_short_name == "GRIN2A"))
+GRIN2B_id <- row.names(subset(fData(cds), gene_short_name == "GRIN2B"))
+KCNJ3_id <- row.names(subset(fData(cds), gene_short_name == "KCNJ3"))
+KCNJ4_id <- row.names(subset(fData(cds), gene_short_name == "KCNJ4"))
+KCNJ9_id <- row.names(subset(fData(cds), gene_short_name == "KCNJ9"))
+MEG3_id <- row.names(subset(fData(cds), gene_short_name == "MEG3"))
+NEFM_id <- row.names(subset(fData(cds), gene_short_name == "NEFM"))
+NRGN_id <- row.names(subset(fData(cds), gene_short_name == "NRGN"))
+RBFOX3_id <- row.names(subset(fData(cds), gene_short_name == "RBFOX3"))
+SLC6A7_id <- row.names(subset(fData(cds), gene_short_name == "SLC6A7"))
+SLC17A6_id <- row.names(subset(fData(cds), gene_short_name == "SLC17A6"))
+SLC17A7_id <- row.names(subset(fData(cds), gene_short_name == "SLC17A7"))
+SYP_id <- row.names(subset(fData(cds), gene_short_name == "SYP"))
+#Microglia markers.
+ADGRE1_id <- row.names(subset(fData(cds), gene_short_name == "ADGRE1"))
+AIF1_id <- row.names(subset(fData(cds), gene_short_name == "AIF1"))
+CD68_id <- row.names(subset(fData(cds), gene_short_name == "CD68"))
+CD74_id <- row.names(subset(fData(cds), gene_short_name == "CD74"))
+CSF1R_id <- row.names(subset(fData(cds), gene_short_name == "CSF1R"))
+CX3CR1_id <- row.names(subset(fData(cds), gene_short_name == "CX3CR1"))
+LPL_id <- row.names(subset(fData(cds), gene_short_name == "LPL"))
+PTPRC_id <- row.names(subset(fData(cds), gene_short_name == "PTPRC"))
+TMEM119_id <- row.names(subset(fData(cds), gene_short_name == "TMEM119"))
+#Endothelial cell markers.
+CD34_id <- row.names(subset(fData(cds), gene_short_name == "CD34"))
+CDH5_id <- row.names(subset(fData(cds), gene_short_name == "CDH5"))
+FLT1_id <- row.names(subset(fData(cds), gene_short_name == "FLT1"))
+KDR_id <- row.names(subset(fData(cds), gene_short_name == "KDR"))
+PECAM1_id <- row.names(subset(fData(cds), gene_short_name == "PECAM1"))
+SLC6A6_id <- row.names(subset(fData(cds), gene_short_name == "SLC6A6"))
+TEK_id <- row.names(subset(fData(cds), gene_short_name == "TEK"))
+VWF_id <- row.names(subset(fData(cds), gene_short_name == "VWF"))
+#Pericyte markers.
+PDGFRB_id <- row.names(subset(fData(cds), gene_short_name == "PDGFRB"))
+
+#Classify cells by cell type marker genes.
+cth <- newCellTypeHierarchy()
+cth <- addCellType(cth, "OPC", classify_func = function(x) { (x[PDGFRA_id,] >= 1 | x[VCAN_id,] >= 1) & (x[ADGRE1_id,] == 0 & x[AIF1_id,] == 0 & x[CD68_id,] == 0 & x[CD74_id,] == 0 & x[CSF1R_id,] == 0 & x[CX3CR1_id,] == 0 & x[LPL_id,] == 0 & x[PTPRC_id,] == 0 & x[TMEM119_id,] == 0 & x[CD34_id,] == 0 & x[CDH5_id,] == 0 & x[FLT1_id,] == 0 & x[KDR_id,] == 0 & x[PECAM1_id,] == 0 & x[SLC6A6_id,] == 0 & x[TEK_id,] == 0 & x[VWF_id,] == 0 & x[PDGFRB_id,] == 0) })
+cth <- addCellType(cth, "OL", classify_func = function(x) { (x[CLDN11_id,] >= 1 | x[MBP_id,] >= 1 | x[MOG_id,] >= 1 | x[OPALIN_id,] >= 1 | x[PLP1_id,] >= 1) & (x[ADGRE1_id,] == 0 & x[AIF1_id,] == 0 & x[CD68_id,] == 0 & x[CD74_id,] == 0 & x[CSF1R_id,] == 0 & x[CX3CR1_id,] == 0 & x[LPL_id,] == 0 & x[PTPRC_id,] == 0 & x[TMEM119_id,] == 0 & x[CD34_id,] == 0 & x[CDH5_id,] == 0 & x[FLT1_id,] == 0 & x[KDR_id,] == 0 & x[PECAM1_id,] == 0 & x[SLC6A6_id,] == 0 & x[TEK_id,] == 0 & x[VWF_id,] == 0 & x[PDGFRB_id,] == 0) })
+cth <- addCellType(cth, "Astro", classify_func = function(x) { (x[ALDH1L1_id,] >= 1 | x[ALDOC_id,] >= 1 | x[AQP4_id,] >= 1 | x[GFAP_id,] >= 1 | x[GJA1_id,] >= 1 | x[SLC1A2_id,] >= 1 | x[SLC1A3_id,] >= 1 | x[SLC6A11_id,] >= 1) & (x[ADGRE1_id,] == 0 & x[AIF1_id,] == 0 & x[CD68_id,] == 0 & x[CD74_id,] == 0 & x[CSF1R_id,] == 0 & x[CX3CR1_id,] == 0 & x[LPL_id,] == 0 & x[PTPRC_id,] == 0 & x[TMEM119_id,] == 0 & x[CD34_id,] == 0 & x[CDH5_id,] == 0 & x[FLT1_id,] == 0 & x[KDR_id,] == 0 & x[PECAM1_id,] == 0 & x[SLC6A6_id,] == 0 & x[TEK_id,] == 0 & x[VWF_id,] == 0 & x[PDGFRB_id,] == 0) })
+cth <- addCellType(cth, "Neuron", classify_func = function(x) { (x[ADCYAP1_id,] >= 1 | x[COCH_id,] >= 1 | x[CRH_id,] >= 1 | x[GAD1_id,] >= 1 | x[GAD2_id,] >= 1 | x[GRIN1_id,] >= 1 | x[GRIN2A_id,] >= 1 | x[GRIN2B_id,] >= 1 | x[KCNJ3_id,] >= 1 | x[KCNJ4_id,] >= 1 | x[KCNJ9_id,] >= 1 | x[MEG3_id,] >= 1 | x[NEFM_id,] >= 1 | x[NRGN_id,] >= 1 | x[RBFOX3_id,] >= 1 | x[SLC6A7_id,] >= 1 | x[SLC17A6_id,] >= 1 | x[SLC17A7_id,] >= 1 | x[SYP_id,] >= 1) & (x[ADGRE1_id,] == 0 & x[AIF1_id,] == 0 & x[CD68_id,] == 0 & x[CD74_id,] == 0 & x[CSF1R_id,] == 0 & x[CX3CR1_id,] == 0 & x[LPL_id,] == 0 & x[PTPRC_id,] == 0 & x[TMEM119_id,] == 0 & x[CD34_id,] == 0 & x[CDH5_id,] == 0 & x[FLT1_id,] == 0 & x[KDR_id,] == 0 & x[PECAM1_id,] == 0 & x[SLC6A6_id,] == 0 & x[TEK_id,] == 0 & x[VWF_id,] == 0 & x[PDGFRB_id,] == 0) })
+cth <- addCellType(cth, "Micro", classify_func = function(x) { (x[ADGRE1_id,] >= 1 | x[AIF1_id,] >= 1 | x[CD68_id,] >= 1 | x[CD74_id,] >= 1 | x[CSF1R_id,] >= 1 | x[CX3CR1_id,] >= 1 | x[LPL_id,] >= 1 | x[PTPRC_id,] >= 1 | x[TMEM119_id,] >= 1) })
+cth <- addCellType(cth, "Endo", classify_func = function(x) { (x[CD34_id,] >= 1 | x[CDH5_id,] >= 1 | x[FLT1_id,] >= 1 | x[KDR_id,] >= 1 | x[PECAM1_id,] >= 1 | x[SLC6A6_id,] >= 1 | x[TEK_id,] >= 1 | x[VWF_id,] >= 1) })
+cth <- addCellType(cth, "Peri", classify_func = function(x) { (x[PDGFRB_id,] >= 1) })
+cds <- classifyCells(cds, cth, frequency_thresh =  0.1)
+table(pData(cds)$CellType)
+
+
+#---------- All OL Linneage Cells ----------
+
+
+#Subset OL linneage cells.
+cds_OLL_all <- cds[,pData(cds)$CellType == "OPC" | pData(cds)$CellType == "OL"]
+
+#Set ordering genes *EITHER*...
+#Manually.
+ordering_genes_all <- row.names(subset(fData(cds), gene_short_name == "APOD" | 
+                                                   gene_short_name == "BIRC2" |
+                                                   gene_short_name == "BMP4" |
+                                                   gene_short_name == "CLDN11" |
+                                                   gene_short_name == "CSPG4" |
+                                                   gene_short_name == "ENPP6" |
+                                                   gene_short_name == "GPR17" |
+                                                   gene_short_name == "MAL" |
+                                                   gene_short_name == "MBP" |
+                                                   gene_short_name == "MOG" |
+                                                   gene_short_name == "NKX2-2" |
+                                                   gene_short_name == "NNAT" |
+                                                   gene_short_name == "OLIG1" |
+                                                   gene_short_name == "OLIG2" |
+                                                   gene_short_name == "OPALIN" |
+                                                   gene_short_name == "PDGFRA" |
+                                                   gene_short_name == "PTGDS" |
+                                                   gene_short_name == "SOX10" |
+                                                   gene_short_name == "TMEM2" |
+                                                   gene_short_name == "VCAN"))
+cds_OLL_all <- setOrderingFilter(cds_OLL_all, ordering_genes_all)
+#Or by differential expression test over pseudotime (must have ordered manually at least once to do this).
+test_results_all <- differentialGeneTest(cds_OLL_all[expressed_genes,], fullModelFormulaStr = "~sm.ns(Pseudotime, df=3)", reducedModelFormulaStr = "~1", relative_expr = TRUE, cores = 1)
+test_results_all <- test_results_all[order(test_results_all$qval, decreasing = FALSE),]
+ordering_genes_all <- rownames(head(test_results_all, 500))
+cds_OLL_all <- setOrderingFilter(cds_OLL_all, ordering_genes_all)
+
+#Reduce data dimensionality (this step is error-prone if "ncenter" is not defined; you may have to supervise and play around with "ncenter" to get it to work.
+cds_OLL_all <- reduceDimension(cds_OLL_all, max_components = 2, method = "DDRTree", ncenter = 60)
+
+#Order cells along a trajectory.
+cds_OLL_all <- orderCells(cds_OLL_all)
+
+#Visualize trajectories, colored and split by various characteristics.
+plot_cell_trajectory(cds_OLL_all, show_backbone = TRUE, show_branch_points = TRUE, color_by = "State")
+plot_cell_trajectory(cds_OLL_all, show_backbone = TRUE, show_branch_points = TRUE, color_by = "CellType")
+plot_cell_trajectory(cds_OLL_all, show_backbone = TRUE, show_branch_points = TRUE, color_by = "condition")
+plot_cell_trajectory(cds_OLL_all, color_by = "State") + facet_wrap(~State, nrow = 1)
+plot_cell_trajectory(cds_OLL_all, color_by = "CellType") + facet_wrap(~CellType, nrow = 1)
+plot_cell_trajectory(cds_OLL_all, color_by = "condition") + facet_wrap(~condition, nrow = 1)
+
+#*IF* there is only one state, plot gene expression of that one state over pseudotime.
+plot_multiple_branches_heatmap(cds_OLL_all[row.names(head(test_results_all, 250)),], branches = c(1), num_clusters = 1, show_rownames = FALSE)
+
+#*IF* there is more than one state, run branched expression analysis modeling to identify genes with branch-dependent expression...
+BD_genes_all <- BEAM(cds_OLL_all, branch_point = 1, cores = 1)
+BD_genes_all <- BD_genes_all[order(BD_genes_all$qval),]
+BD_genes_all <- BD_genes_all[,c("gene_short_name", "pval", "qval")]
+#And plot gene expression over pseudotime, split by branch.
+plot_multiple_branches_heatmap(cds_OLL_all[row.names(subset(BD_genes_all, qval < 1e-3)),], branches = c(2,1,3), num_clusters = 2, show_rownames = FALSE, branches_name = c("OPC", "OL1", "OL2"))
+
+
+#---------- Control OL Lineage Cells ----------
+
+
+#Subset control OL linneage cells.
+cds_OLL_control <- cds_OLL_all[,pData(cds_OLL_all)$condition == "control"]
+
+#Set ordering genes *EITHER*...
+#Manually.
+ordering_genes_control <- row.names(subset(fData(cds), gene_short_name == "APOD" | 
+                                                       gene_short_name == "BIRC2" |
+                                                       gene_short_name == "BMP4" |
+                                                       gene_short_name == "CLDN11" |
+                                                       gene_short_name == "CSPG4" |
+                                                       gene_short_name == "ENPP6" |
+                                                       gene_short_name == "GPR17" |
+                                                       gene_short_name == "MAL" |
+                                                       gene_short_name == "MBP" |
+                                                       gene_short_name == "MOG" |
+                                                       gene_short_name == "NKX2-2" |
+                                                       gene_short_name == "NNAT" |
+                                                       gene_short_name == "OLIG1" |
+                                                       gene_short_name == "OLIG2" |
+                                                       gene_short_name == "OPALIN" |
+                                                       gene_short_name == "PDGFRA" |
+                                                       gene_short_name == "PTGDS" |
+                                                       gene_short_name == "SOX10" |
+                                                       gene_short_name == "TMEM2" |
+                                                       gene_short_name == "VCAN"))
+cds_OLL_control <- setOrderingFilter(cds_OLL_control, ordering_genes_control)
+#Or by differential expression test over pseudotime (must have ordered manually at least once to do this).
+test_results_control <- differentialGeneTest(cds_OLL_control[expressed_genes,], fullModelFormulaStr = "~sm.ns(Pseudotime, df=3)", reducedModelFormulaStr = "~1", relative_expr = TRUE, cores = 1)
+test_results_control <- test_results_control[order(test_results_control$qval, decreasing = FALSE),]
+ordering_genes_control <- rownames(head(test_results_control, 500))
+cds_OLL_control <- setOrderingFilter(cds_OLL_control, ordering_genes_control)
+
+#Reduce data dimensionality (this step is error-prone if "ncenter" is not defined; you may have to supervise and play around with "ncenter" to get it to work.
+cds_OLL_control <- reduceDimension(cds_OLL_control, max_components = 2, method = "DDRTree", ncenter = 39)
+
+#Order cells along a trajectory.
+cds_OLL_control <- orderCells(cds_OLL_control)
+
+#Visualize trajectories, colored and split by various characteristics.
+plot_cell_trajectory(cds_OLL_control, show_backbone = TRUE, show_branch_points = TRUE, color_by = "State")
+plot_cell_trajectory(cds_OLL_control, show_backbone = TRUE, show_branch_points = TRUE, color_by = "CellType")
+plot_cell_trajectory(cds_OLL_control, show_backbone = TRUE, show_branch_points = TRUE, color_by = "condition")
+plot_cell_trajectory(cds_OLL_control, color_by = "State") + facet_wrap(~State, nrow = 1)
+plot_cell_trajectory(cds_OLL_control, color_by = "CellType") + facet_wrap(~CellType, nrow = 1)
+plot_cell_trajectory(cds_OLL_control, color_by = "condition") + facet_wrap(~condition, nrow = 1)
+
+#*IF* there is only one state, plot gene expression of that one state over pseudotime.
+plot_multiple_branches_heatmap(cds_OLL_control[row.names(head(test_results_control, 500)),], branches = c(1), num_clusters = 1, show_rownames = FALSE)
+
+#*IF* there is more than one state, run branched expression analysis modeling to identify genes with branch-dependent expression...
+BD_genes_control <- BEAM(cds_OLL_control, branch_point = 1, cores = 1)
+BD_genes_control <- BD_genes_control[order(BD_genes_control$qval),]
+BD_genes_control <- BD_genes_control[,c("gene_short_name", "pval", "qval")]
+#And plot gene expression over pseudotime, split by branch.
+plot_multiple_branches_heatmap(cds_OLL_control[row.names(subset(BD_genes_control, qval < 1e-3)),], branches = c(3,1,2), num_clusters = 2, show_rownames = TRUE, branches_name = c("OPC", "OL1", "OL2"))
+
+
+#---------- CTE OL Lineage Cells ----------
+
+
+#Subset CTE OL linneage cells.
+cds_OLL_CTE <- cds_OLL_all[,pData(cds_OLL_all)$condition == "control"]
+
+#Set ordering genes *EITHER*...
+#Manually.
+ordering_genes_CTE <- row.names(subset(fData(cds), gene_short_name == "APOD" | 
+                                                   gene_short_name == "BIRC2" |
+                                                   gene_short_name == "BMP4" |
+                                                   gene_short_name == "CLDN11" |
+                                                   gene_short_name == "CSPG4" |
+                                                   gene_short_name == "ENPP6" |
+                                                   gene_short_name == "GPR17" |
+                                                   gene_short_name == "MAL" |
+                                                   gene_short_name == "MBP" |
+                                                   gene_short_name == "MOG" |
+                                                   gene_short_name == "NKX2-2" |
+                                                   gene_short_name == "NNAT" |
+                                                   gene_short_name == "OLIG1" |
+                                                   gene_short_name == "OLIG2" |
+                                                   gene_short_name == "OPALIN" |
+                                                   gene_short_name == "PDGFRA" |
+                                                   gene_short_name == "PTGDS" |
+                                                   gene_short_name == "SOX10" |
+                                                   gene_short_name == "TMEM2" |
+                                                   gene_short_name == "VCAN"))
+cds_OLL_CTE <- setOrderingFilter(cds_OLL_CTE, ordering_genes_CTE)
+#Or by differential expression test over pseudotime (must have ordered manually at least once to do this).
+test_results_CTE <- differentialGeneTest(cds_OLL_CTE[expressed_genes,], fullModelFormulaStr = "~sm.ns(Pseudotime, df=3)", reducedModelFormulaStr = "~1", relative_expr = TRUE, cores = 1)
+test_results_CTE <- test_results_CTE[order(test_results_CTE$qval, decreasing = FALSE),]
+ordering_genes_CTE <- rownames(head(test_results_CTE, 500))
+cds_OLL_CTE <- setOrderingFilter(cds_OLL_CTE, ordering_genes_CTE)
+
+#Reduce data dimensionality (this step is error-prone if "ncenter" is not defined; you may have to supervise and play around with "ncenter" to get it to work.
+cds_OLL_CTE <- reduceDimension(cds_OLL_CTE, max_components = 2, method = "DDRTree", ncenter = 56)
+
+#Order cells along a trajectory.
+cds_OLL_CTE <- orderCells(cds_OLL_CTE)
+
+#Visualize trajectories, colored and split by various characteristics.
+plot_cell_trajectory(cds_OLL_CTE, show_backbone = TRUE, show_branch_points = TRUE, color_by = "State")
+plot_cell_trajectory(cds_OLL_CTE, show_backbone = TRUE, show_branch_points = TRUE, color_by = "CellType")
+plot_cell_trajectory(cds_OLL_CTE, show_backbone = TRUE, show_branch_points = TRUE, color_by = "condition")
+plot_cell_trajectory(cds_OLL_CTE, color_by = "State") + facet_wrap(~State, nrow = 1)
+plot_cell_trajectory(cds_OLL_CTE, color_by = "CellType") + facet_wrap(~CellType, nrow = 1)
+plot_cell_trajectory(cds_OLL_CTE, color_by = "condition") + facet_wrap(~condition, nrow = 1)
+
+#*IF* there is only one state, plot gene expression of that one state over pseudotime.
+plot_multiple_branches_heatmap(cds_OLL_CTE[row.names(head(test_results_CTE, 250)),], branches = c(1), num_clusters = 1, show_rownames = FALSE)
+
+#*IF* there is more than one state, run branched expression analysis modeling to identify genes with branch-dependent expression...
+BD_genes_CTE <- BEAM(cds_OLL_CTE, branch_point = 1, cores = 1)
+BD_genes_CTE <- BD_genes_CTE[order(BD_genes_CTE$qval),]
+BD_genes_CTE <- BD_genes_CTE[,c("gene_short_name", "pval", "qval")]
+#And plot gene expression over pseudotime, split by branch.
+plot_multiple_branches_heatmap(cds_OLL_CTE[row.names(subset(BD_genes_CTE, qval < 1e-3)),], branches = c(3,1,2), num_clusters = 2, show_rownames = TRUE, branches_name = c("OPC", "OL1", "OL2"))
+
+
+#---------- HAVE YET TO FIGURE THIS OUT ----------
+
+
+plot_genes_branched_heatmap(cds_OLL_CTE[row.names(subset(BD_genes_CTE,
+                                                  qval < 1e-4)),],
+                                                  branch_point = 1,
+                                                  num_clusters = 2,
+                                                  cores = 1,
+                                                  branch_states = c(1,2),
+                                                  use_gene_short_name = TRUE,
+                                                  show_rownames = TRUE)
