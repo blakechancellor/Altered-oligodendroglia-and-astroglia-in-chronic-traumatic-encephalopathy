@@ -11,6 +11,9 @@ browseVignettes("monocle")
 #Load packages
 library(monocle)
 
+#Define a helpful color gradient to be used later on.
+color_gradient <- colorRampPalette(c("blue", "white", "darkred"))(500)
+
 #Extract count data, phenotype data, and feature data from the Seurat Object.
 counts.data <- as(as.matrix(CTE.combined@assays$RNA@data), 'sparseMatrix')
 pheno.data <- new('AnnotatedDataFrame', data = CTE.combined@meta.data)
@@ -36,7 +39,7 @@ cds <-  estimateDispersions(cds)
 cds <- detectGenes(cds, min_expr = 1)
 
 #Get all genes that are expressed in at least 10 cells.
-expressed_genes <- row.names(subset(fData(cds_OLL_control), num_cells_expressed >= 10))
+expressed_genes <- row.names(subset(fData(cds), num_cells_expressed >= 10))
 
 
 #---------- Clustering ----------
@@ -119,11 +122,12 @@ table(pData(cds)$CellType)
 #---------- All OL Linneage Cells ----------
 
 
-#Subset OL linneage cells.
+#Subset and cluster OL linneage cells (clustering will be helpful later for determining the number of centers to use during dimension reduction prior to ordering cells).
 cds_OLL_all <- cds[,pData(cds)$CellType == "OPC" | pData(cds)$CellType == "OL"]
+cds_OLL_all <- reduceDimension(cds_OLL_all, max_components = 2, num_dim = 30, reduction_method = "tSNE", verbose = TRUE)
+cds_OLL_all <- clusterCells(cds_OLL_all)
 
-#Set ordering genes *EITHER*...
-#Manually.
+#Set ordering genes manually.
 ordering_genes_all <- row.names(subset(fData(cds), gene_short_name == "APOD" | 
                                                    gene_short_name == "BIRC2" |
                                                    gene_short_name == "BMP4" |
@@ -145,50 +149,60 @@ ordering_genes_all <- row.names(subset(fData(cds), gene_short_name == "APOD" |
                                                    gene_short_name == "TMEM2" |
                                                    gene_short_name == "VCAN"))
 cds_OLL_all <- setOrderingFilter(cds_OLL_all, ordering_genes_all)
-#Or by differential expression test over pseudotime (must have ordered manually at least once to do this).
+
+#Reduce data dimensionality.
+cds_OLL_all <- reduceDimension(cds_OLL_all, max_components = 2, method = "DDRTree", ncenter = length(levels(cds_OLL_all$Cluster)))
+
+#Order cells along a trajectory (you can visualize the trajectory at this point, but it's better to wait until a bigger set of ordering genes are used).
+cds_OLL_all <- orderCells(cds_OLL_all)
+
+#Run differential expression test to find genes that vary over pseudotime.
 test_results_all <- differentialGeneTest(cds_OLL_all[expressed_genes,], fullModelFormulaStr = "~sm.ns(Pseudotime, df=3)", reducedModelFormulaStr = "~1", relative_expr = TRUE, cores = 1)
 test_results_all <- test_results_all[order(test_results_all$qval, decreasing = FALSE),]
-ordering_genes_all <- rownames(head(test_results_all, 500))
+ordering_genes_all <- rownames(test_results_all[which(test_results_all$qval < 1e-4),])
 cds_OLL_all <- setOrderingFilter(cds_OLL_all, ordering_genes_all)
 
-#Reduce data dimensionality (this step is error-prone if "ncenter" is not defined; you may have to supervise and play around with "ncenter" to get it to work.
-cds_OLL_all <- reduceDimension(cds_OLL_all, max_components = 2, method = "DDRTree", ncenter = 60)
+#Reduce data dimensionality again.
+cds_OLL_all <- reduceDimension(cds_OLL_all, max_components = 2, method = "DDRTree", ncenter = length(levels(cds_OLL_all$Cluster)))
 
-#Order cells along a trajectory.
+#Reorder cells along a trajectory.
 cds_OLL_all <- orderCells(cds_OLL_all)
 
 #Visualize trajectories, colored and split by various characteristics.
 plot_cell_trajectory(cds_OLL_all, show_backbone = TRUE, show_branch_points = TRUE, color_by = "State")
 plot_cell_trajectory(cds_OLL_all, show_backbone = TRUE, show_branch_points = TRUE, color_by = "CellType")
 plot_cell_trajectory(cds_OLL_all, show_backbone = TRUE, show_branch_points = TRUE, color_by = "condition")
+plot_cell_trajectory(cds_OLL_all, show_backbone = TRUE, show_branch_points = TRUE, color_by = "Pseudotime")
 plot_cell_trajectory(cds_OLL_all, color_by = "State") + facet_wrap(~State, nrow = 1)
 plot_cell_trajectory(cds_OLL_all, color_by = "CellType") + facet_wrap(~CellType, nrow = 1)
 plot_cell_trajectory(cds_OLL_all, color_by = "condition") + facet_wrap(~condition, nrow = 1)
 
-#Order cells along a trajectory again, defining the root branch.
-cds_OLL_all <- orderCells(cds_OLL_all, root_state = 2)
+#Order cells along a trajectory again, defining the root branch (you can also flip the direction of pseudotime by adding a "reverse = TRUE" argument).
+cds_OLL_all <- orderCells(cds_OLL_all, root_state = 1)
 
 #*IF* there is only one state, plot gene expression of that one state over pseudotime.
-plot_multiple_branches_heatmap(cds_OLL_all[row.names(head(test_results_all, 250)),], branches = c(1), num_clusters = 1, show_rownames = FALSE)
+plot_multiple_branches_heatmap(cds_OLL_all[row.names(head(test_results_all, 250)),], branches = c(1), num_clusters = 1, show_rownames = FALSE, hmcols = color_gradient)
 
 #*IF* there is more than one state, run branched expression analysis modeling to identify genes with branch-dependent expression...
 BD_genes_all <- BEAM(cds_OLL_all, branch_point = 1, cores = 1)
 BD_genes_all <- BD_genes_all[order(BD_genes_all$qval),]
 BD_genes_all <- BD_genes_all[,c("gene_short_name", "pval", "qval")]
 #And plot gene expression over pseudotime, split by branch...
-plot_multiple_branches_heatmap(cds_OLL_all[row.names(subset(BD_genes_all, qval < 1e-3)),], branches = c(2,1,3), num_clusters = 2, show_rownames = FALSE, branches_name = c("OPC", "OL1", "OL2"))
+plot_multiple_branches_heatmap(cds_OLL_all[row.names(subset(BD_genes_all, qval < 1e-3)),], branches = c(2,1,3), num_clusters = 2, show_rownames = FALSE, branches_name = c("OPC", "OL1", "OL2"), hmcols = color_gradient)
 #And plot bifurcation at a branch point.
-plot_genes_branched_heatmap(cds_OLL_all[row.names(subset(BD_genes_all, qval < 1e-3)),], branch_point = 1, num_clusters = 2, cores = 1, use_gene_short_name = TRUE, show_rownames = TRUE)
+plot_genes_branched_heatmap(cds_OLL_all[row.names(subset(BD_genes_all, qval < 1e-3)),], branch_point = 1, num_clusters = 2, cores = 1, use_gene_short_name = TRUE, show_rownames = FALSE, hmcols = color_gradient)
 
 
 #---------- Control OL Lineage Cells ----------
 
 
 #Subset control OL linneage cells.
-cds_OLL_control <- cds_OLL_all[,pData(cds_OLL_all)$condition == "control"]
+cds_OLL_control <- cds[,pData(cds)$CellType == "OPC" | pData(cds)$CellType == "OL"]
+cds_OLL_control <- cds_OLL_control[,pData(cds_OLL_all)$condition == "control"]
+cds_OLL_control <- reduceDimension(cds_OLL_control, max_components = 2, num_dim = 30, reduction_method = "tSNE", verbose = TRUE)
+cds_OLL_control <- clusterCells(cds_OLL_control)
 
-#Set ordering genes *EITHER*...
-#Manually.
+#Set ordering genes manually.
 ordering_genes_control <- row.names(subset(fData(cds), gene_short_name == "APOD" | 
                                                        gene_short_name == "BIRC2" |
                                                        gene_short_name == "BMP4" |
@@ -210,50 +224,60 @@ ordering_genes_control <- row.names(subset(fData(cds), gene_short_name == "APOD"
                                                        gene_short_name == "TMEM2" |
                                                        gene_short_name == "VCAN"))
 cds_OLL_control <- setOrderingFilter(cds_OLL_control, ordering_genes_control)
-#Or by differential expression test over pseudotime (must have ordered manually at least once to do this).
+
+#Reduce data dimensionality.
+cds_OLL_control <- reduceDimension(cds_OLL_control, max_components = 2, method = "DDRTree", ncenter = length(levels(cds_OLL_control$Cluster)))
+
+#Order cells along a trajectory (you can visualize the trajectory at this point, but it's better to wait until a bigger set of ordering genes are used).
+cds_OLL_control <- orderCells(cds_OLL_control)
+
+#Run differential expression test to find genes that vary over pseudotime.
 test_results_control <- differentialGeneTest(cds_OLL_control[expressed_genes,], fullModelFormulaStr = "~sm.ns(Pseudotime, df=3)", reducedModelFormulaStr = "~1", relative_expr = TRUE, cores = 1)
 test_results_control <- test_results_control[order(test_results_control$qval, decreasing = FALSE),]
-ordering_genes_control <- rownames(head(test_results_control, 500))
+ordering_genes_control <- rownames(test_results_control[which(test_results_control$qval < 1e-4),])
 cds_OLL_control <- setOrderingFilter(cds_OLL_control, ordering_genes_control)
 
-#Reduce data dimensionality (this step is error-prone if "ncenter" is not defined; you may have to supervise and play around with "ncenter" to get it to work.
-cds_OLL_control <- reduceDimension(cds_OLL_control, max_components = 2, method = "DDRTree", ncenter = 39)
+#Reduce data dimensionality again.
+cds_OLL_control <- reduceDimension(cds_OLL_control, max_components = 2, method = "DDRTree", ncenter = length(levels(cds_OLL_control$Cluster)))
 
-#Order cells along a trajectory.
+#Reorder cells along a trajectory.
 cds_OLL_control <- orderCells(cds_OLL_control)
 
 #Visualize trajectories, colored and split by various characteristics.
 plot_cell_trajectory(cds_OLL_control, show_backbone = TRUE, show_branch_points = TRUE, color_by = "State")
 plot_cell_trajectory(cds_OLL_control, show_backbone = TRUE, show_branch_points = TRUE, color_by = "CellType")
 plot_cell_trajectory(cds_OLL_control, show_backbone = TRUE, show_branch_points = TRUE, color_by = "condition")
+plot_cell_trajectory(cds_OLL_control, show_backbone = TRUE, show_branch_points = TRUE, color_by = "Pseudotime")
 plot_cell_trajectory(cds_OLL_control, color_by = "State") + facet_wrap(~State, nrow = 1)
 plot_cell_trajectory(cds_OLL_control, color_by = "CellType") + facet_wrap(~CellType, nrow = 1)
 plot_cell_trajectory(cds_OLL_control, color_by = "condition") + facet_wrap(~condition, nrow = 1)
 
-#Order cells along a trajectory again, defining the root branch.
+#Order cells along a trajectory again, defining the root branch (you can also flip the direction of pseudotime by adding a "reverse = TRUE" argument).
 cds_OLL_control <- orderCells(cds_OLL_control, root_state = 1)
 
 #*IF* there is only one state, plot gene expression of that one state over pseudotime.
-plot_multiple_branches_heatmap(cds_OLL_control[row.names(head(test_results_control, 500)),], branches = c(1), num_clusters = 1, show_rownames = FALSE)
+plot_multiple_branches_heatmap(cds_OLL_control[row.names(head(test_results_control, 250)),], branches = c(1), num_clusters = 1, show_rownames = FALSE, hmcols = color_gradient)
 
 #*IF* there is more than one state, run branched expression analysis modeling to identify genes with branch-dependent expression...
 BD_genes_control <- BEAM(cds_OLL_control, branch_point = 1, cores = 1)
 BD_genes_control <- BD_genes_control[order(BD_genes_control$qval),]
 BD_genes_control <- BD_genes_control[,c("gene_short_name", "pval", "qval")]
 #And plot gene expression over pseudotime, split by branch...
-plot_multiple_branches_heatmap(cds_OLL_control[row.names(subset(BD_genes_control, qval < 1e-3)),], branches = c(3,1,2), num_clusters = 2, show_rownames = TRUE, branches_name = c("OPC", "OL1", "OL2"))
+plot_multiple_branches_heatmap(cds_OLL_control[row.names(subset(BD_genes_control, qval < 1e-3)),], branches = c(2,1,3), num_clusters = 2, show_rownames = FALSE, branches_name = c("OPC", "OL1", "OL2"), hmcols = color_gradient)
 #And plot bifurcation at a branch point.
-plot_genes_branched_heatmap(cds_OLL_control[row.names(subset(BD_genes_control, qval < 1e-3)),], branch_point = 1, num_clusters = 2, cores = 1, use_gene_short_name = TRUE, show_rownames = TRUE)
+plot_genes_branched_heatmap(cds_OLL_control[row.names(subset(BD_genes_control, qval < 1e-3)),], branch_point = 1, num_clusters = 2, cores = 1, use_gene_short_name = TRUE, show_rownames = FALSE, hmcols = color_gradient)
 
 
 #---------- CTE OL Lineage Cells ----------
 
 
 #Subset CTE OL linneage cells.
-cds_OLL_CTE <- cds_OLL_all[,pData(cds_OLL_all)$condition == "control"]
+cds_OLL_CTE <- cds[,pData(cds)$CellType == "OPC" | pData(cds)$CellType == "OL"]
+cds_OLL_CTE <- cds_OLL_CTE[,pData(cds_OLL_all)$condition == "CTE"]
+cds_OLL_CTE <- reduceDimension(cds_OLL_CTE, max_components = 2, num_dim = 30, reduction_method = "tSNE", verbose = TRUE)
+cds_OLL_CTE <- clusterCells(cds_OLL_CTE)
 
-#Set ordering genes *EITHER*...
-#Manually.
+#Set ordering genes manually.
 ordering_genes_CTE <- row.names(subset(fData(cds), gene_short_name == "APOD" | 
                                                    gene_short_name == "BIRC2" |
                                                    gene_short_name == "BMP4" |
@@ -275,37 +299,45 @@ ordering_genes_CTE <- row.names(subset(fData(cds), gene_short_name == "APOD" |
                                                    gene_short_name == "TMEM2" |
                                                    gene_short_name == "VCAN"))
 cds_OLL_CTE <- setOrderingFilter(cds_OLL_CTE, ordering_genes_CTE)
-#Or by differential expression test over pseudotime (must have ordered manually at least once to do this).
+
+#Reduce data dimensionality.
+cds_OLL_CTE <- reduceDimension(cds_OLL_CTE, max_components = 2, method = "DDRTree", ncenter = length(levels(cds_OLL_CTE$Cluster)))
+
+#Order cells along a trajectory (you can visualize the trajectory at this point, but it's better to wait until a bigger set of ordering genes are used).
+cds_OLL_CTE <- orderCells(cds_OLL_CTE)
+
+#Run differential expression test to find genes that vary over pseudotime.
 test_results_CTE <- differentialGeneTest(cds_OLL_CTE[expressed_genes,], fullModelFormulaStr = "~sm.ns(Pseudotime, df=3)", reducedModelFormulaStr = "~1", relative_expr = TRUE, cores = 1)
 test_results_CTE <- test_results_CTE[order(test_results_CTE$qval, decreasing = FALSE),]
-ordering_genes_CTE <- rownames(head(test_results_CTE, 500))
+ordering_genes_CTE <- rownames(test_results_CTE[which(test_results_CTE$qval < 1e-4),])
 cds_OLL_CTE <- setOrderingFilter(cds_OLL_CTE, ordering_genes_CTE)
 
-#Reduce data dimensionality (this step is error-prone if "ncenter" is not defined; you may have to supervise and play around with "ncenter" to get it to work.
-cds_OLL_CTE <- reduceDimension(cds_OLL_CTE, max_components = 2, method = "DDRTree", ncenter = 56)
+#Reduce data dimensionality again.
+cds_OLL_CTE <- reduceDimension(cds_OLL_CTE, max_components = 2, method = "DDRTree", ncenter = length(levels(cds_OLL_CTE$Cluster)))
 
-#Order cells along a trajectory.
+#Reorder cells along a trajectory.
 cds_OLL_CTE <- orderCells(cds_OLL_CTE)
 
 #Visualize trajectories, colored and split by various characteristics.
 plot_cell_trajectory(cds_OLL_CTE, show_backbone = TRUE, show_branch_points = TRUE, color_by = "State")
 plot_cell_trajectory(cds_OLL_CTE, show_backbone = TRUE, show_branch_points = TRUE, color_by = "CellType")
 plot_cell_trajectory(cds_OLL_CTE, show_backbone = TRUE, show_branch_points = TRUE, color_by = "condition")
+plot_cell_trajectory(cds_OLL_CTE, show_backbone = TRUE, show_branch_points = TRUE, color_by = "Pseudotime")
 plot_cell_trajectory(cds_OLL_CTE, color_by = "State") + facet_wrap(~State, nrow = 1)
 plot_cell_trajectory(cds_OLL_CTE, color_by = "CellType") + facet_wrap(~CellType, nrow = 1)
 plot_cell_trajectory(cds_OLL_CTE, color_by = "condition") + facet_wrap(~condition, nrow = 1)
 
-#Order cells along a trajectory again, defining the root branch.
+#Order cells along a trajectory again, defining the root branch (you can also flip the direction of pseudotime by adding a "reverse = TRUE" argument).
 cds_OLL_CTE <- orderCells(cds_OLL_CTE, root_state = 2)
 
 #*IF* there is only one state, plot gene expression of that one state over pseudotime.
-plot_multiple_branches_heatmap(cds_OLL_CTE[row.names(head(test_results_CTE, 250)),], branches = c(1), num_clusters = 1, show_rownames = FALSE)
+plot_multiple_branches_heatmap(cds_OLL_CTE[row.names(head(test_results_CTE, 250)),], branches = c(1), num_clusters = 1, show_rownames = FALSE, hmcols = color_gradient)
 
 #*IF* there is more than one state, run branched expression analysis modeling to identify genes with branch-dependent expression...
 BD_genes_CTE <- BEAM(cds_OLL_CTE, branch_point = 1, cores = 1)
 BD_genes_CTE <- BD_genes_CTE[order(BD_genes_CTE$qval),]
 BD_genes_CTE <- BD_genes_CTE[,c("gene_short_name", "pval", "qval")]
 #And plot gene expression over pseudotime, split by branch...
-plot_multiple_branches_heatmap(cds_OLL_CTE[row.names(subset(BD_genes_CTE, qval < 1e-2)),], branches = c(2,1,3), num_clusters = 2, show_rownames = FALSE, branches_name = c("OPC", "OL1", "OL2"))
+plot_multiple_branches_heatmap(cds_OLL_CTE[row.names(subset(BD_genes_CTE, qval < 1e-3)),], branches = c(2,1,3), num_clusters = 2, show_rownames = FALSE, branches_name = c("OPC", "OL1", "OL2"), hmcols = color_gradient)
 #And plot bifurcation at a branch point.
-plot_genes_branched_heatmap(cds_OLL_CTE[row.names(subset(BD_genes_CTE, qval < 1e-3)),], branch_point = 1, num_clusters = 2, cores = 1, use_gene_short_name = TRUE, show_rownames = TRUE)
+plot_genes_branched_heatmap(cds_OLL_CTE[row.names(subset(BD_genes_CTE, qval < 1e-3)),], branch_point = 1, num_clusters = 2, cores = 1, use_gene_short_name = TRUE, show_rownames = FALSE, hmcols = color_gradient)
