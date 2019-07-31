@@ -84,9 +84,10 @@ p2 <- DimPlot(object = CTE.combined, reduction = "umap", label = TRUE)
 plot_grid(p1, p2)
 DimPlot(object = CTE.combined, reduction = "umap", split.by = "condition")
 
-#Get median UMIs and genes per cell.
+#Get median UMIs, genes, and percent mitochondrial RNA per cell.
 median(CTE.combined@meta.data$nCount_RNA)
 median(CTE.combined@meta.data$nFeature_RNA)
+median(CTE.combined@meta.data$percent.mt)
 
 #Find marker genes.
 CTE.markers <- FindAllMarkers(object = CTE.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
