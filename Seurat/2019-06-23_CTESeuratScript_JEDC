@@ -22,9 +22,9 @@ use_python("C:/Users/josep/AppData/Local/Programs/Python/Python37/python.exe")
 control1.data <- readSparseCounts("L5864_1.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
 control2.data <- readSparseCounts("L5864_2.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
 control3.data <- readSparseCounts("L5864_3.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
-CTE1.data <- readSparseCounts("K117_1.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
-CTE2.data <- readSparseCounts("K117_2.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
-CTE3.data <- readSparseCounts("K117_3.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+CTE1.data <- readSparseCounts("K177_1.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+CTE2.data <- readSparseCounts("K177_2.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
+CTE3.data <- readSparseCounts("K177_3.counts.tsv", sep = "\t", row.names = TRUE, col.names = TRUE)
 
 #Transpose counts.
 control1.data <- t(control1.data)
@@ -50,7 +50,7 @@ CTE.data <- cbind(CTE1.data, CTE2.data, CTE3.data)
 control <- CreateSeuratObject(counts = control.data, project = "CTE_control", min.cells = 5)
 control$condition <- "control"
 control[["percent.mt"]] <- PercentageFeatureSet(object = control, pattern = "^MT-")
-control <- subset(x = control, subset = nFeature_RNA > 185 & nFeature_RNA < 2500 & percent.mt < 5)
+control <- subset(x = control, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
 control <- NormalizeData(object = control, verbose = FALSE)
 control <- FindVariableFeatures(object = control, selection.method = "vst", nfeatures = 2000)
 
@@ -58,7 +58,7 @@ control <- FindVariableFeatures(object = control, selection.method = "vst", nfea
 CTE <- CreateSeuratObject(counts = CTE.data, project = "CTE_CTE", min.cells = 5)
 CTE$condition <- "CTE"
 CTE[["percent.mt"]] <- PercentageFeatureSet(object = CTE, pattern = "^MT-")
-CTE <- subset(x = CTE, subset = nFeature_RNA > 185 & nFeature_RNA < 2500 & percent.mt < 5)
+CTE <- subset(x = CTE, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
 CTE <- NormalizeData(object = CTE, verbose = FALSE)
 CTE <- FindVariableFeatures(object = CTE, selection.method = "vst", nfeatures = 2000)
 
@@ -77,12 +77,16 @@ CTE.combined <- ScaleData(object = CTE.combined, vars.to.regress = 'percent.mt')
 CTE.combined <- RunPCA(object = CTE.combined, npcs = 30, verbose = FALSE)
 CTE.combined <- RunUMAP(object = CTE.combined, reduction = "pca", dims = 1:30)
 CTE.combined <- FindNeighbors(object = CTE.combined, reduction = "pca", dims = 1:30)
-CTE.combined <- FindClusters(CTE.combined, resolution = 2)
+CTE.combined <- FindClusters(CTE.combined, resolution = 0.5)
 VlnPlot(object = CTE.combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 p1 <- DimPlot(object = CTE.combined, reduction = "umap", group.by = "condition")
 p2 <- DimPlot(object = CTE.combined, reduction = "umap", label = TRUE)
 plot_grid(p1, p2)
 DimPlot(object = CTE.combined, reduction = "umap", split.by = "condition")
+
+#Get median UMIs and genes per cell.
+median(CTE.combined@meta.data$nCount_RNA)
+median(CTE.combined@meta.data$nFeature_RNA)
 
 #Find marker genes.
 CTE.markers <- FindAllMarkers(object = CTE.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
