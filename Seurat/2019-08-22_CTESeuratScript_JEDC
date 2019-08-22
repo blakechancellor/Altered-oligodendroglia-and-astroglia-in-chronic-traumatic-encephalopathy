@@ -109,35 +109,35 @@ control <- PercentageFeatureSet(object = control, pattern = "^MT-", col.name = "
 control <- subset(x = control, subset = nFeature_RNA > 280 & nFeature_RNA < 2500 & percent.mt < 5)
 control <- SCTransform(object = control, vars.to.regress = "percent.mt", conserve.memory = FALSE, return.only.var.genes = FALSE)
 
-#Perform basic analyses and visualization.
-#control_solo <- control
-#control_solo <- RunPCA(object = control_solo, npcs = 100)
-#ElbowPlot(object = control_solo, ndims = 100)
-#control_solo <- RunUMAP(control_solo, reduction = "pca", dims = 1:11, n.epochs = 600, parallel = FALSE)
-#control_solo <- FindNeighbors(object = control_solo, reduction = "pca", dims = 1:11)
-#control_solo <- FindClusters(control_solo, resolution = 0.3)
-#DimPlot(object = control_solo, reduction = "umap", label = TRUE)
+Perform basic analyses and visualization.
+control_solo <- control
+control_solo <- RunPCA(object = control_solo, npcs = 100)
+ElbowPlot(object = control_solo, ndims = 100)
+control_solo <- RunUMAP(control_solo, reduction = "pca", dims = 1:11, n.epochs = 600, parallel = FALSE)
+control_solo <- FindNeighbors(object = control_solo, reduction = "pca", dims = 1:11)
+control_solo <- FindClusters(control_solo, resolution = 0.3)
+DimPlot(object = control_solo, reduction = "umap", label = TRUE)
 
 #Use known marker genes to identify cell types.
 #OPC.
-#FeaturePlot(object = control_solo, features = c("VCAN"), min.cutoff = "q9")
+FeaturePlot(object = control_solo, features = c("VCAN"), min.cutoff = "q9")
 #Oligodendrocyte.
-#FeaturePlot(object = control_solo, features = c("CLDN11"), min.cutoff = "q9")
+FeaturePlot(object = control_solo, features = c("CLDN11"), min.cutoff = "q9")
 #Astrocyte.
-#FeaturePlot(object = control_solo, features = c("AQP4"), min.cutoff = "q9")
+FeaturePlot(object = control_solo, features = c("AQP4"), min.cutoff = "q9")
 #Microglia.
-#FeaturePlot(object = control_solo, features = c("CD74"), min.cutoff = "q9")
+FeaturePlot(object = control_solo, features = c("CD74"), min.cutoff = "q9")
 #Neuron.
-#FeaturePlot(object = control_solo, features = c("MEG3"), min.cutoff = "q9")
+FeaturePlot(object = control_solo, features = c("MEG3"), min.cutoff = "q9")
 #Endothelial Cell.
-#FeaturePlot(object = control_solo, features = c("CDH5"), min.cutoff = "q9")
+FeaturePlot(object = control_solo, features = c("CDH5"), min.cutoff = "q9")
 #Pericyte.
-#FeaturePlot(object = control_solo, features = c("ZIC1"), min.cutoff = "q9")
+FeaturePlot(object = control_solo, features = c("ZIC1"), min.cutoff = "q9")
 
 #Rename cluster identities and re-visualize.
-#control_solo <- RenameIdents(object = control_solo, `0` = "OL1", `1` = "OL2", `2` = "Astro", `3` = "OPC", `4` = "Neuro", `5` = "OL3", `6` = "Micro", `7` = "OL4")
-#Idents(object = control_solo) <- factor(x = Idents(object = control_solo), levels = c("OL1", "OL2", "Astro", "OPC", "Neuro", "OL3", "Micro", "OL4"))
-#DimPlot(object = control_solo, reduction = "umap", split.by = "condition", label = TRUE)
+control_solo <- RenameIdents(object = control_solo, `0` = "OL1", `1` = "OL2", `2` = "Astro", `3` = "OPC", `4` = "Neuro", `5` = "OL3", `6` = "Micro", `7` = "OL4")
+Idents(object = control_solo) <- factor(x = Idents(object = control_solo), levels = c("OL1", "OL2", "Astro", "OPC", "Neuro", "OL3", "Micro", "OL4"))
+DimPlot(object = control_solo, reduction = "umap", split.by = "condition", label = TRUE)
 
 #Build CTE Seurat object with quality control and add metadata.
 CTE <- CreateSeuratObject(counts = CTE.data, project = "CTE_CTE")
@@ -148,34 +148,34 @@ CTE <- subset(x = CTE, subset = nFeature_RNA > 300 & nFeature_RNA < 2500 & perce
 CTE <- SCTransform(object = CTE, vars.to.regress = "percent.mt", conserve.memory = FALSE, return.only.var.genes = FALSE)
 
 #Perform basic analyses and visualization.
-#CTE_solo <- CTE
-#CTE_solo <- RunPCA(object = CTE_solo, npcs = 100)
-#ElbowPlot(object = CTE_solo, ndims = 100)
-#CTE_solo <- RunUMAP(CTE_solo, reduction = "pca", dims = 1:12, n.epochs = 600, parallel = FALSE)
-#CTE_solo <- FindNeighbors(object = CTE_solo, reduction = "pca", dims = 1:12)
-#CTE_solo <- FindClusters(CTE_solo, resolution = 0.3)
-#DimPlot(object = CTE_solo, reduction = "umap", label = TRUE)
+CTE_solo <- CTE
+CTE_solo <- RunPCA(object = CTE_solo, npcs = 100)
+ElbowPlot(object = CTE_solo, ndims = 100)
+CTE_solo <- RunUMAP(CTE_solo, reduction = "pca", dims = 1:12, n.epochs = 600, parallel = FALSE)
+CTE_solo <- FindNeighbors(object = CTE_solo, reduction = "pca", dims = 1:12)
+CTE_solo <- FindClusters(CTE_solo, resolution = 0.3)
+DimPlot(object = CTE_solo, reduction = "umap", label = TRUE)
 
 #Use known marker genes to identify cell types.
 #OPC.
-#FeaturePlot(object = CTE_solo, features = c("VCAN"), min.cutoff = "q9")
+FeaturePlot(object = CTE_solo, features = c("VCAN"), min.cutoff = "q9")
 #Oligodendrocyte.
-#FeaturePlot(object = CTE_solo, features = c("CLDN11"), min.cutoff = "q9")
+FeaturePlot(object = CTE_solo, features = c("CLDN11"), min.cutoff = "q9")
 #Astrocyte.
-#FeaturePlot(object = CTE_solo, features = c("AQP4"), min.cutoff = "q9")
+FeaturePlot(object = CTE_solo, features = c("AQP4"), min.cutoff = "q9")
 #Microglia.
-#FeaturePlot(object = CTE_solo, features = c("CD74"), min.cutoff = "q9")
+FeaturePlot(object = CTE_solo, features = c("CD74"), min.cutoff = "q9")
 #Neuron.
-#FeaturePlot(object = CTE_solo, features = c("MEG3"), min.cutoff = "q9")
+FeaturePlot(object = CTE_solo, features = c("MEG3"), min.cutoff = "q9")
 #Endothelial Cell.
-#FeaturePlot(object = CTE_solo, features = c("CDH5"), min.cutoff = "q9")
+FeaturePlot(object = CTE_solo, features = c("CDH5"), min.cutoff = "q9")
 #Pericyte.
-#FeaturePlot(object = CTE_solo, features = c("ZIC1"), min.cutoff = "q9")
+FeaturePlot(object = CTE_solo, features = c("ZIC1"), min.cutoff = "q9")
 
 #Rename cluster identities and re-visualize.
-#CTE_solo <- RenameIdents(object = CTE_solo, `0` = "OL1", `1` = "OL2", `2` = "Astro", `3` = "Micro", `4` = "OPC", `5` = "Neuro", `6` = "OL3")
-#Idents(object = CTE_solo) <- factor(x = Idents(object = CTE_solo), levels = c("OL1", "OL2", "Astro", "Micro", "OPC", "Neuro", "OL3"))
-#DimPlot(object = CTE_solo, reduction = "umap", split.by = "condition", label = TRUE)
+CTE_solo <- RenameIdents(object = CTE_solo, `0` = "OL1", `1` = "OL2", `2` = "Astro", `3` = "Micro", `4` = "OPC", `5` = "Neuro", `6` = "OL3")
+Idents(object = CTE_solo) <- factor(x = Idents(object = CTE_solo), levels = c("OL1", "OL2", "Astro", "Micro", "OPC", "Neuro", "OL3"))
+DimPlot(object = CTE_solo, reduction = "umap", split.by = "condition", label = TRUE)
 
 #Integrate Seurat objects.
 CTE.anchors <- FindIntegrationAnchors(object.list = list(control, CTE), anchor.features = 3000, dims = 1:30)
