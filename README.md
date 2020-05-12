@@ -5,7 +5,8 @@ main_script includes all the code used in R to perform computational analysis fo
 i.e., sequencing reads to count matrices, was performed following the "Pipeline for processing inDrops sequencing data" 
 (https://github.com/indrops/indrops). 
 
-Table of Contents for main_script;
+Table of Contents for main_script:
+
 Lines 1-275: Reads inDrops matrices into R and prepare them for Seurat. 
 
 Lines 276-315: Builds Seurat objects for Control and CTE, then creates an integrated Seurat object. 
