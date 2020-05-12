@@ -473,29 +473,48 @@ avg.all_ols <- log1p(AverageExpression(all_ols, verbose = FALSE)$SCT)
 avg.all_ols$gene <- rownames(avg.all_ols)
 
 genes.to.label = c("FTH1", "CRYAB")
-p <- ggplot(avg.ol7, aes(Control, CTE)) + geom_point() + ggtitle("ol7")
+p <- ggplot(avg.all_ols, aes(Control, CTE)) + geom_point() + ggtitle("Oligodendrocytes")
 p <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
 plot_grid(p)
 
 #Supplementary Fig. 2 
+DotPlot(CTE.combined, features = (c("PLP1", "GFAP", "VCAN", "CD74", "NRGN", "GAD1", "CLDN5"))) + RotatedAxis() + coord_flip()
 
 #Supplementary Fig. 4a 
+DimPlot(OPCs, reduction = "tsne", label = TRUE)
 
 #Fig. 3a 
+DimPlot(OLs, reduction = "tsne", label = TRUE)
 
 #Fig. 3c 
+VlnPlot(OLs, features = c("FTH1", "FTL", "CRYAB"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
 
 #Fig. 3d
+OL6 <- subset(OLs, idents = "OL6")
+Idents(OL6) <- "condition"
+avg.ol6 <- log1p(AverageExpression(OL6, verbose = FALSE)$SCT)
+avg.ol6$gene <- rownames(avg.ol6)
+
+genes.to.label = c("FTH1", "CRYAB")
+p <- ggplot(avg.ol6, aes(Control, CTE)) + geom_point() + ggtitle("OL6")
+p <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+plot_grid(p)
 
 #Fig. 4a 
+DimPlot(astros, reduction = "tsne", label = TRUE)
 
 #Fig. 4c
+VlnPlot(astros, features = c("CD44", "BCL6"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
 
 #Fig. 4d 
+FeaturePlot(object = astros, reduction = "tsne", features = c("CD44"), min.cutoff = "q9", cols = c("grey90", "brown1"), pt.size = 2)
+FeaturePlot(object = astros, reduction = "tsne", features = c("BCL6"), min.cutoff = "q9", cols = c("grey90", "brown1"), pt.size = 2)
+FeaturePlot(object = astros, reduction = "tsne", features = c("GFAP"), min.cutoff = "q9", cols = c("grey90", "brown1"), pt.size = 2)
 
 #Fig. 4g 
 
 #Supplementary Fig. 6a 
+DimPlot(astros, reduction = "tsne", label = TRUE)
 
 #Supplementary Table 2 
 
@@ -506,3 +525,14 @@ plot_grid(p)
 #Supplementary Table 5
 
 #Supplementary Table 6
+all_cells <- table(CTE.combined@meta.data$subject, CTE.combined@meta.data$celltype)
+write.table(all_cells, file="cells.tsv")
+
+ol_cells <- table(OLs1@meta.data$subject, OLs1@meta.data$celltype)
+write.table(ol_cells, file = "ol_cells.tsv")
+
+astro_cells <- table(astros@meta.data$subject, astros@meta.data$celltype)
+write.table(astro_cells, file="astro_cells.tsv")
+
+opc_cells = table(OPCs@meta.data$subject, OPCs@meta.data$celltype)
+write.table(opc_cells, file="opc_cells.tsv")
