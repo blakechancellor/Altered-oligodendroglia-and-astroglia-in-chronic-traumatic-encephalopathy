@@ -513,6 +513,31 @@ FeaturePlot(object = astros, reduction = "tsne", features = c("GFAP"), min.cutof
 
 #Fig. 4g 
 
+Idents(CTE.combined) <- "celltype.stim"
+
+Bulk_DE <- FindMarkers(CTE.combined, ident.1 = c("OL1_CTE", "OL2_CTE", "OL3_CTE", "OL4_CTE", "Astrocyte1_CTE", "OPC1_CTE", "OL5_CTE", "Exc_Neuron1_CTE", "Microglia_CTE", "OPC2_CTE", "Astrocyte2_CTE", "OL6_CTE", "Astrocyte3_CTE", "OL7_CTE", "Int_Neuron_CTE", "Exc_Neuron2_CTE", "OL8_CTE", "Endo_CTE"), ident.2 = c("OL1_control", "OL2_control", "OL3_control", "OL4_control", "Astrocyte1_control", "OPC1_control", "OL5_control", "Exc_Neuron1_control", "Microglia_control", "OPC2_control", "Astrocyte2_control", "OL6_control", "Astrocyte3_control", "OL7_control", "Int_Neuron_control", "Exc_Neuron2_control", "OL8_control", "Endo_control"), logfc.threshold = 0, test.use = "MAST")
+Bulk_DE <- rownames(Bulk_DE)[Bulk_DE$p_val_adj < 0.05]
+write.csv(Bulk_DE, file = "Bulk_Query_Set")
+
+Bulk_Ref <- rownames(CTE.combined)
+write.csv(Bulk_Ref, file = "Bulk_Reference_Set")
+
+OL_DE <- FindMarkers(CTE.combined, ident.1 = c("OL1_CTE", "OL2_CTE", "OL3_CTE", "OL4_CTE", "OL5_CTE", "OL6_CTE", "OL7_CTE", "OL8_CTE"), ident.2 = c("OL1_Control", "OL2_Control", "OL3_Control", "OL4_Control", "OL5_Control", "OL6_Control", "OL7_Control", "OL8_Control"), logfc.threshold = 0, test.use = "MAST")
+OL_DE <- rownames(OL_DE)[OL_DE$p_val_adj < 0.05]
+write.csv(OL_DE, file = "OL_Query_Set")
+
+OLs <- subset(CTE.combined, subset = ((seurat_celltype == "OL1") | (seurat_celltype == "OL2") | (seurat_celltype == "OL3") | (seurat_celltype == "OL4") | (seurat_celltype == "OL5") | (seurat_celltype == "OL6") | (seurat_celltype == "OL7") | (seurat_celltype == "OL8")))@assays$SCT@counts
+OL_Ref <- rownames(OLs)[apply(OLs, 1, sum) > 0]
+write.csv(OL_Ref, file = "OL_Reference_Set")
+
+Astrocyte_DE <- FindMarkers(CTE.combined, ident.1 = c("Astrocyte1_CTE", "Astrocyte2_CTE", "Astrocyte3_CTE"), ident.2 = c("Astrocyte1_Control", "Astrocyte2_Control", "Astrocyte3_Control"), logfc.threshold = 0, test.use = "MAST")
+Astrocyte_DE <- rownames(Astrocyte_DE)[Astrocyte_DE$p_val_adj < 0.05]
+write.csv(Astrocyte_DE, file = "Astrocyte_Query_Set")
+
+Astrocytes <- subset(CTE.combined, subset = ((seurat_celltype == "Astrocyte1") | (seurat_celltype == "Astrocyte2") | (seurat_celltype == "Astrocyte3")))@assays$SCT@counts
+Astrocyte_Ref <- rownames(Astrocytes)[apply(Astrocytes, 1, sum) > 0]
+write.csv(Astrocyte_Ref, file = "Astrocyte_Reference_Set")
+
 #Supplementary Fig. 6a 
 DimPlot(astros, reduction = "tsne", label = TRUE)
 
