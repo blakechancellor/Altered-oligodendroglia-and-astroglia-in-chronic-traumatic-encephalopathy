@@ -528,7 +528,7 @@ DimPlot(astros, reduction = "tsne", label = TRUE)
 all_cells <- table(CTE.combined@meta.data$subject, CTE.combined@meta.data$celltype)
 write.table(all_cells, file="cells.tsv")
 
-ol_cells <- table(OLs1@meta.data$subject, OLs1@meta.data$celltype)
+ol_cells <- table(OLs@meta.data$subject, OLs@meta.data$celltype)
 write.table(ol_cells, file = "ol_cells.tsv")
 
 astro_cells <- table(astros@meta.data$subject, astros@meta.data$celltype)
