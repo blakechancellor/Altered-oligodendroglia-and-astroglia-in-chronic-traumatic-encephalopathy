@@ -517,6 +517,18 @@ FeaturePlot(object = astros, reduction = "tsne", features = c("GFAP"), min.cutof
 DimPlot(astros, reduction = "tsne", label = TRUE)
 
 #Supplementary Table 2 
+length(row.names(Control@meta.data))
+median(Control@meta.data$nFeature_SCT)
+median(Control@meta.data$nCount_SCT)
+
+length(row.names(CTE@meta.data))
+median(CTE@meta.data$nFeature_SCT)
+median(CTE@meta.data$nCount_SCT)
+
+length(row.names(CTE.combined@meta.data))
+median(CTE.combined@meta.data$nFeature_SCT)
+median(CTE.combined@meta.data$nCount_SCT)
+
 
 #Supplementary Table 3
 cluster0.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
