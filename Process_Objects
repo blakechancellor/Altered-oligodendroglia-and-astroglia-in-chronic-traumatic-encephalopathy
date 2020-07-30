@@ -1,0 +1,62 @@
+#Scale and perform dimensionality reduction for the primary tSNE for all nuclei. 
+CTE.combined <- ScaleData(object = CTE.combined)
+CTE.combined <- RunPCA(object = CTE.combined, npcs = 100, verbose = FALSE)
+CTE.combined <- RunTSNE(object = CTE.combined, reduction = "pca", dims = 1:23, n.epochs = 600, parallel = FALSE,check_duplicates = FALSE) #23
+CTE.combined <- FindNeighbors(object = CTE.combined, reduction = "pca", dims = 1:23)
+CTE.combined <- FindClusters(CTE.combined, resolution = 0.8)
+DefaultAssay(object = CTE.combined) <- "SCT"
+
+#Subset oligodendrocytes and perform dimensionality reduction for the oligodendrocyte-specific analysis. 
+OLs <- SubsetData(object = CTE.combined, ident.use = c("OL1", "OL2", "OL3", "OL4", "OL5", "OL6", "OL7", "OL8"), do.clean = TRUE, do.scale = TRUE)
+DefaultAssay(object = OLs) <- "integrated"
+# Run the standard workflow for visualization and clustering
+OLs <- ScaleData(object = OLs)
+OLs <- RunPCA(object = OLs, npcs = 100, verbose = FALSE)
+OLs <- RunTSNE(object = OLs, reduction = "pca", dims = 1:23, n.epochs = 600, parallel = FALSE,check_duplicates = FALSE)
+OLs <- FindNeighbors(object = OLs, reduction = "pca", dims = 1:23)
+OLs <- FindClusters(OLs, resolution = 0.1)
+DefaultAssay(object = OLs) <- "SCT"
+
+#Subset oligodendrocyte precursor cells (OPCs) and perform dimensionality reduction for the OPC-specific analysis. 
+OPCs <- SubsetData(object = CTE.combined, ident.use = c("OPC1", "OPC2"), do.clean = TRUE, do.scale = TRUE)
+DefaultAssay(object = OPCs) <- "integrated"
+# Run the standard workflow for visualization and clustering
+OPCs <- ScaleData(object = OPCs)
+OPCs <- RunPCA(object = OPCs, npcs = 100, verbose = FALSE)
+OPCs <- RunTSNE(object = OPCs, reduction = "pca", dims = 1:23, n.epochs = 600, parallel = FALSE,check_duplicates = FALSE)
+OPCs <- FindNeighbors(object = OPCs, reduction = "pca", dims = 1:23)
+OPCs <- FindClusters(OPCs, resolution = 0.1)
+DefaultAssay(object = OPCs) <- "SCT"
+
+#Subset astrocytes and perform dimensionality reduction for the astrocyte-specific analysis. 
+astros <- SubsetData(object = CTE.combined, ident.use = c("Astrocyte1", "Astrocyte2", "Astrocyte3"), do.clean = TRUE, do.scale = TRUE)
+DefaultAssay(object = astros) <- "integrated"
+# Run the standard workflow for visualization and clustering
+astros <- ScaleData(object = astros)
+astros <- RunPCA(object = astros, npcs = 100, verbose = FALSE)
+astros <- RunTSNE(object = astros, reduction = "pca", dims = 1:23, n.epochs = 600, parallel = FALSE,check_duplicates = FALSE)
+astros <- FindNeighbors(object = astros, reduction = "pca", dims = 1:23)
+astros <- FindClusters(astros, resolution = 0.1)
+DefaultAssay(object = astros) <- "SCT"
+
+#Subset microglia and perform dimensionality reduction for the microglia-specific analysis.
+microglia <- SubsetData(object = CTE.combined, ident.use = c("Microglia"), do.clean = TRUE, do.scale = TRUE)
+DefaultAssay(object = microglia) <- "integrated"
+# Run the standard workflow for visualization and clustering
+microglia <- ScaleData(object = microglia)
+microglia <- RunPCA(object = microglia, npcs = 100, verbose = FALSE)
+microglia <- RunTSNE(object = microglia, reduction = "pca", dims = 1:23, n.epochs = 600, parallel = FALSE,check_duplicates = FALSE)
+microglia <- FindNeighbors(object = microglia, reduction = "pca", dims = 1:23)
+microglia <- FindClusters(microglia, resolution = 0.1)
+DefaultAssay(object = microglia) <- "SCT"
+
+#Subset neurons and perform dimensionality reduction for the neuron-specific analysis. 
+neurons <- SubsetData(object = CTE.combined, ident.use = c("Exc_Neuron1", "Exc_Neuron2", "Int_Neuron"), do.clean = TRUE, do.scale = TRUE)
+DefaultAssay(object = neurons) <- "integrated"
+# Run the standard workflow for visualization and clustering
+neurons <- ScaleData(object = neurons)
+neurons <- RunPCA(object = neurons, npcs = 100, verbose = FALSE)
+neurons <- RunTSNE(object = neurons, reduction = "pca", dims = 1:23, n.epochs = 600, parallel = FALSE,check_duplicates = FALSE)
+neurons <- FindNeighbors(object = neurons, reduction = "pca", dims = 1:23)
+neurons <- FindClusters(neurons, resolution = 0.1)
+DefaultAssay(object = neurons) <- "SCT"
