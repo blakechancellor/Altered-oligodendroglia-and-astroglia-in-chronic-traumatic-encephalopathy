@@ -1,0 +1,43 @@
+#Add sample count for controls
+1 <- rep("Control1", 406)
+2 <- rep("Control2", 1485)
+3 <- rep("Control3", 629)
+4 <- rep("Control4", 1426)
+5 <- rep("Control5", 5838)
+6 <- rep("Control6", 2174)
+7 <- rep("Control7", 2429)
+8 <- rep("Control8", 1410)
+control_sample <- c(1, 2, 3, 4, 5, 6, 7, 8)
+
+#Build control Seurat object with quality control.
+Control <- CreateSeuratObject(counts = control.data, project = "Control")
+Control$condition <- "Control"
+Control$bio_rep <- substr(substrRight(rownames(Control@meta.data), 3), 1, 1)
+Control <- PercentageFeatureSet(object = Control, pattern = "^MT-", col.name = "percent.mt")
+Control <- subset(x = Control, subset = nFeature_RNA > 420 & nFeature_RNA < 2500 & percent.mt < 1)
+Control$subject <- control_sample
+Control <- SCTransform(object = Control, vars.to.regress = "percent.mt")
+
+#Add sample count for CTE
+9 <- rep("CTE1", 2717)
+10 <- rep("CTE2", 614)
+11 <- rep("CTE3", 951)
+12 <- rep("CTE4", 2276)
+13 <- rep("CTE5", 262)
+14 <- rep("CTE6", 749)
+15 <- rep("CTE7", 1118)
+16 <- rep("CTE8", 251)
+cte_sample <- c(9, 10, 11, 12, 13, 14, 15, 16)
+
+cte_sample <- c(K177, K18, SLI124, SLI131, SLI135, K487, K151, K267)#Build CTE Seurat object with quality control.
+CTE <- CreateSeuratObject(counts = CTE.data, project = "CTE")
+CTE$condition <- "CTE"
+CTE$bio_rep <- substr(substrRight(rownames(CTE@meta.data), 3), 1, 1)
+CTE <- PercentageFeatureSet(object = CTE, pattern = "^MT-", col.name = "percent.mt")
+CTE <- subset(x = CTE, subset = nFeature_RNA > 400 & nFeature_RNA < 2500 & percent.mt < 1)
+CTE$subject <- cte_sample
+CTE <- SCTransform(object = CTE, vars.to.regress = "percent.mt")
+
+#Integrate Seurat objects.
+CTE.anchors <- FindIntegrationAnchors(object.list = list(Control, CTE), anchor.features = 3000, dims = 1:30)
+CTE.combined <- IntegrateData(anchorset = CTE.anchors, dims = 1:30)
