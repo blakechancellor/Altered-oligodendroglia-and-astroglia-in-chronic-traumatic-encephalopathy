@@ -1,0 +1,401 @@
+#The first 58 lines will produce general plots for visualizing cells and labeling clusters by cell type. 
+
+#Visualize initial tSNE
+DimPlot(CTE.combined, reduction = "tsne", label = TRUE) 
+
+#Find marker genes for each cluster, this produces lists that are in Supplementary Table 3
+cluster0.markers <- FindMarkers(object = CTE.combined, ident.1 = 0, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster0.markers, n = 100)
+cluster1.markers <- FindMarkers(object = CTE.combined, ident.1 = 1, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster1.markers, n = 100)
+cluster2.markers <- FindMarkers(object = CTE.combined, ident.1 = 2, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster2.markers, n = 100)
+cluster3.markers <- FindMarkers(object = CTE.combined, ident.1 = 3, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster3.markers, n = 100)
+cluster4.markers <- FindMarkers(object = CTE.combined, ident.1 = 4, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster4.markers, n = 100)
+cluster5.markers <- FindMarkers(object = CTE.combined, ident.1 = 5, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster5.markers, n = 100)
+cluster6.markers <- FindMarkers(object = CTE.combined, ident.1 = 6, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster6.markers, n = 100)
+cluster7.markers <- FindMarkers(object = CTE.combined, ident.1 = 7, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster7.markers, n = 100)
+cluster8.markers <- FindMarkers(object = CTE.combined, ident.1 = 8, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster8.markers, n = 100)
+cluster9.markers <- FindMarkers(object = CTE.combined, ident.1 = 9, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster9.markers, n = 100)
+cluster10.markers <- FindMarkers(object = CTE.combined, ident.1 = 10, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster10.markers, n = 100)
+cluster11.markers <- FindMarkers(object = CTE.combined, ident.1 = 11, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster11.markers, n = 100)
+cluster12.markers <- FindMarkers(object = CTE.combined, ident.1 = 12, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster12.markers, n = 100)
+cluster13.markers <- FindMarkers(object = CTE.combined, ident.1 = 13, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster13.markers, n = 100)
+cluster14.markers <- FindMarkers(object = CTE.combined, ident.1 = 14, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster14.markers, n = 100)
+cluster15.markers <- FindMarkers(object = CTE.combined, ident.1 = 15, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster15.markers, n = 100)
+cluster16.markers <- FindMarkers(object = CTE.combined, ident.1 = 16, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster16.markers, n = 100)
+cluster17.markers <- FindMarkers(object = CTE.combined, ident.1 = 17, logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster17.markers, n = 100)
+
+#Label tSNE by cell types
+CTE.combined <- RenameIdents(object = CTE.combined, `0` = "OL1", `1` = "OL2", `2` = "OL3", `3` = "OL4", `4` = "Astrocyte1", `5` = "OPC1", `6` = "OL5", `7` = "Exc_Neuron1", `8` = "Microglia", `9` = "OPC2", `10` = "Astrocyte2", `11` = "OL6", `12` = "Astrocyte3", `13` = "OL7", `14` = "Int_Neuron", `15` = "Exc_Neuron2", `16` = "OL8", `17` = "Endo")
+
+#Produce a dot plot to visualize marker genes
+Idents(object = CTE.combined) <- factor(x = Idents(object = CTE.combined), levels = c("OL1", "OL2", "OL3", "OL4", "Astrocyte1", "OPC1", "OL5", "Exc_Neuron1", "Microglia", "OPC2", "Astrocyte2", "OL6", "Astrocyte3", "OL7", "Int_Neuron", "Exc_Neuron2", "OL8", "Endo"))
+markers.to.plot <- c("PLP1", "GFAP", "VCAN", "CD74", "NRGN", "GAD1", "CLDN5")
+DotPlot(object = CTE.combined, features = rev(x = markers.to.plot), cols = c("navy", "lightgray"), 
+        dot.scale = 8, split.by = "condition") + RotatedAxis()
+
+#Prepare data for variety of differential gene expression analyses
+CTE.combined$celltype.stim <- paste(Idents(object = CTE.combined), CTE.combined$condition, sep = "_")
+CTE.combined$celltype <- Idents(object = CTE.combined)
+Idents(object = CTE.combined) <- "celltype.stim"
+main.response <- FindMarkers(object = CTE.combined, ident.1 = c(input_1), ident.2 = c(input_2), verbose = FALSE, test.use = "MAST")
+head(x = main.response, n = 500)
+
+#The remaining code will produce each panel from each figure
+#Fig.1b
+DimPlot(CTE.combined, reduction = "tsne", label = TRUE) 
+DimPlot(object = CTE.combined, reduction = "tsne", group.by = "condition", label = FALSE) 
+DimPlot(object = CTE.combined, reduction = "tsne", group.by = "subject", label = FALSE)
+
+#Fig.1c
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = c("PLP1"), min.cutoff = "q9", cols = c("lightgrey", "red1"), pt.size = 1.5)
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = c("AQP4"), min.cutoff = "q9", cols = c("lightgrey", "red1"), pt.size = 1.5)
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = c("VCAN"), min.cutoff = "q9", cols = c("lightgrey", "red1"), pt.size = 1.5)
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = c("CD74"), min.cutoff = "q9", cols = c("lightgrey", "red1"), pt.size = 1.5)
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = c("NRGN"), min.cutoff = "q9", cols = c("lightgrey", "red1"), pt.size = 1.5)
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = c("GAD1"), min.cutoff = "q9", cols = c("lightgrey", "red1"), pt.size = 1.5)
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = c("CLDN5"), min.cutoff = "q9", cols = c("lightgrey", "red1"), pt.size = 1.5)
+
+#Fig. 1d 
+#For this panel, the input is a matrix with a column for sample, a column for cell type, and a column for normalized cell count
+all_cells <- read.csv(file = 'all_cells_bubble.csv')
+p <- ggplot(all_cells, aes(Cell_Type, Sample))
+p + geom_point(aes(size = Cell_Count)) + scale_size(range = c(0.00000000001,10)) + RotatedAxis()
+
+#Fig. 1e
+VlnPlot(CTE.combined, features = c("DPP10"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+VlnPlot(CTE.combined, features = c("CLU"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+VlnPlot(CTE.combined, features = c("DTNA"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+VlnPlot(CTE.combined, features = c("RNF220"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+VlnPlot(CTE.combined, features = c("FA2H"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+VlnPlot(CTE.combined, features = c("TF"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+
+#Supplementary Fig. 1e 
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = "nFeature_RNA", min.cutoff = "q9", cols = c("lightblue", "orangered1")) 
+
+#Supplementary Fig. 1f 
+FeaturePlot(object = CTE.combined, reduction = "tsne", features = "nCount_RNA", min.cutoff = "q9", cols = c("lightblue", "orangered1")) 
+
+#Supplementary Fig. 1g 
+VlnPlot(CTE.combined, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2, pt.size = 0)
+
+#Supplementary Fig. 1h 
+ElbowPlot(object = CTE.combined, ndims = 30)
+
+#Supplementary Fig. 2
+DotPlot(CTE.combined, features = (c("PLP1", "MBP", "CLDN11", "GFAP", "AQP4", "VCAN", "PDGFRA", "CD74", "ITGAM", "NRGN", "SLC17A7", "GAD1", "GAD2", "CLDN5"))) + RotatedAxis() + coord_flip()
+
+#Fig. 2a 
+DimPlot(OLs, reduction = "tsne", label = TRUE)
+
+#Fig. 2f
+#The input to this plot is a matrix with differentially expressed genes, including logFC and correct p-value, from comparison between all OLs in CTE and all OLs in control. 
+#Read in OL genes
+library(readr)
+ol_genes <- read_csv("PATH/TO/OL_genes.csv")
+row.names(ol_genes) = ol_genes$gene
+#Make Plot
+EnhancedVolcano(ol_genes, 
+                lab = row.names(ol_genes), 
+                x = "log2FoldChange",
+                y = "pvalue",
+                title = "CTE-associated oligodendrocyte DEGs",
+                xlab = "log2(Fold change)",
+                ylab = "-log10(adjusted p value)",
+                xlim = c(-0.5,0.5),
+                ylim = c(0,125),
+                pCutoff = 0.05,
+                FCcutoff = 0.01,
+                pointSize = 3.0,
+                labSize = 3.0,
+                legendPosition = "right")
+
+#Supplementary Fig. 4a 
+DimPlot(OPCs, reduction = "tsne", label = TRUE)
+
+#Fig. 3a 
+DimPlot(OLs, reduction = "tsne", label = TRUE)
+
+#Fig. 3c 
+VlnPlot(OLs, features = c("FTH1", "FTL", "CRYAB"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+
+#Fig. 3d
+OL6 <- subset(OLs, idents = "OL6")
+Idents(OL6) <- "condition"
+avg.ol6 <- log1p(AverageExpression(OL6, verbose = FALSE)$SCT)
+avg.ol6$gene <- rownames(avg.ol6)
+
+genes.to.label = c("FTH1", "CRYAB")
+p <- ggplot(avg.ol6, aes(Control, CTE)) + geom_point() + ggtitle("OL6")
+p <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+plot_grid(p)
+
+#Fig. 4a 
+DimPlot(astros, reduction = "tsne", label = TRUE)
+
+#Fig. 4c
+VlnPlot(astros, features = c("CD44", "BCL6"), slot = "counts", log = TRUE, group.by = "condition", pt.size = 0)
+
+#Fig. 4d 
+#The input to this plot is a matrix with differentially expressed genes, including logFC and correct p-value, from comparison between the genes that make up Astrocyte3 vs. the genes that make up the other astrocyte groups.
+library(readr)
+astro3_genes <- read_csv("PATH/TO/astro3_genes.csv")
+row.names(astro3_genes) = astro3_genes$X1
+#Make Plot
+EnhancedVolcano(astro3_genes, 
+                lab = row.names(astro3_genes), 
+                x = "log2FoldChange",
+                y = "pvalue",
+                title = "CTE-associated astrocyte3 DEGs",
+                xlab = "log2(Fold change)",
+                ylab = "-log10(adjusted p value)",
+                xlim = c(-0.5,1.1),
+                ylim = c(0,125),
+                pCutoff = 0.05,
+                FCcutoff = 0.1,
+                pointSize = 3.0,
+                labSize = 3.0)
+           
+#Fig. 4g 
+Idents(CTE.combined) <- "celltype.stim"
+Astrocyte_DE <- FindMarkers(astros, ident.1 = c("Astrocyte1_CTE", "Astrocyte2_CTE", "Astrocyte3_CTE"), ident.2 = c("Astrocyte1_Control", "Astrocyte2_Control", "Astrocyte3_Control"), logfc.threshold = 0, test.use = "MAST")
+Astrocyte_DE <- rownames(Astrocyte_DE)[Astrocyte_DE$p_val_adj < 0.05]
+write.csv(Astrocyte_DE, file = "Astrocyte_Query_Set")
+Astrocyte_Ref <- rownames(astros)[apply(astros, 1, sum) > 0]
+write.csv(Astrocyte_Ref, file = "Astrocyte_Reference_Set")
+
+#Supplementary Fig. 6a 
+DimPlot(astros, reduction = "tsne", label = TRUE)
+
+#Supplementary Table 2 
+length(row.names(Control@meta.data))
+median(Control@meta.data$nFeature_SCT)
+median(Control@meta.data$nCount_SCT)
+
+length(row.names(CTE@meta.data))
+median(CTE@meta.data$nFeature_SCT)
+median(CTE@meta.data$nCount_SCT)
+
+length(row.names(CTE.combined@meta.data))
+median(CTE.combined@meta.data$nFeature_SCT)
+median(CTE.combined@meta.data$nCount_SCT)
+
+
+#Supplementary Table 3
+cluster0.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster0.markers, n = 100)
+cluster1.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL2", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster1.markers, n = 100)
+cluster2.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL3", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster2.markers, n = 100)
+cluster3.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL4", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster3.markers, n = 100)
+cluster4.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL5", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster4.markers, n = 100)
+cluster5.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL6", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster5.markers, n = 100)
+cluster6.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL7", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster6.markers, n = 100)
+cluster7.markers <- FindMarkers(object = CTE.combined, ident.1 = "OL8", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster7.markers, n = 100)
+cluster8.markers <- FindMarkers(object = CTE.combined, ident.1 = "Astrocyte1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster8.markers, n = 100)
+cluster9.markers <- FindMarkers(object = CTE.combined, ident.1 = "Astrocyte2", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster9.markers, n = 100)
+cluster10.markers <- FindMarkers(object = CTE.combined, ident.1 = "Astrocyte3", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster10.markers, n = 100)
+cluster11.markers <- FindMarkers(object = CTE.combined, ident.1 = "OPC1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster11.markers, n = 100)
+cluster12.markers <- FindMarkers(object = CTE.combined, ident.1 = "OPC2", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster12.markers, n = 100)
+cluster13.markers <- FindMarkers(object = CTE.combined, ident.1 = "Exc_Neuron1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster13.markers, n = 100)
+cluster14.markers <- FindMarkers(object = CTE.combined, ident.1 = "Exc_Neuron2", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster14.markers, n = 100)
+cluster15.markers <- FindMarkers(object = CTE.combined, ident.1 = "Int_Neuron", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster15.markers, n = 100)
+cluster16.markers <- FindMarkers(object = CTE.combined, ident.1 = "Microglia", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster16.markers, n = 100)
+cluster17.markers <- FindMarkers(object = CTE.combined, ident.1 = "Endo", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster17.markers, n = 100)
+cluster18.markers <- FindMarkers(object = OLs, ident.1 = "OL1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster18.markers, n = 100)
+cluster19.markers <- FindMarkers(object = OLs, ident.1 = "OL2", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster19.markers, n = 100)
+cluster20.markers <- FindMarkers(object = OLs, ident.1 = "OL3", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster20.markers, n = 100)
+cluster21.markers <- FindMarkers(object = OLs, ident.1 = "OL4", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster21.markers, n = 100)
+cluster22.markers <- FindMarkers(object = OLs, ident.1 = "OL5", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster22.markers, n = 100)
+cluster23.markers <- FindMarkers(object = OLs, ident.1 = "OL6", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster23.markers, n = 100)
+cluster24.markers <- FindMarkers(object = OLs, ident.1 = "OL7", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster24.markers, n = 100)
+cluster25.markers <- FindMarkers(object = OLs, ident.1 = "OL8", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster25.markers, n = 100)
+cluster26.markers <- FindMarkers(object = astros, ident.1 = "Astrocyte1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster26.markers, n = 100)
+cluster27.markers <- FindMarkers(object = astros, ident.1 = "Astrocyte2", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster27.markers, n = 100)
+cluster28.markers <- FindMarkers(object = astros, ident.1 = "Astrocyte3", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster28.markers, n = 100)
+cluster29.markers <- FindMarkers(object = opcs, ident.1 = "OPC1", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster29.markers, n = 100)
+cluster30.markers <- FindMarkers(object = opcs, ident.1 = "OPC2", logfc.threshold = 0.1, test.use = "roc", only.pos = FALSE)
+head(x = cluster30.markers, n = 100)
+
+#Supplementary Table 4
+#Primary Bulk DE
+Bulk_DE <- FindMarkers(CTE.combined, ident.1 = c("OL1_CTE", "OL2_CTE", "OL3_CTE", "OL4_CTE", "Astrocyte1_CTE", "OPC1_CTE", "OL5_CTE", "Exc_Neuron1_CTE", "Microglia_CTE", "OPC2_CTE", "Astrocyte2_CTE", "OL6_CTE", "Astrocyte3_CTE", "OL7_CTE", "Int_Neuron_CTE", "Exc_Neuron2_CTE", "OL8_CTE", "Endo_CTE"), ident.2 = c("OL1_control", "OL2_control", "OL3_control", "OL4_control", "Astrocyte1_control", "OPC1_control", "OL5_control", "Exc_Neuron1_control", "Microglia_control", "OPC2_control", "Astrocyte2_control", "OL6_control", "Astrocyte3_control", "OL7_control", "Int_Neuron_control", "Exc_Neuron2_control", "OL8_control", "Endo_control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary oligodendrocyte DE
+OL_DE <- FindMarkers(CTE.combined, ident.1 = c("OL1_CTE", "OL2_CTE", "OL3_CTE", "OL4_CTE", "OL5_CTE", "OL6_CTE", "OL7_CTE", "OL8_CTE"), ident.2 = c("OL1_Control", "OL2_Control", "OL3_Control", "OL4_Control", "OL5_Control", "OL6_Control", "OL7_Control", "OL8_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL1_CTE vs. OL1_Control
+OL1_DE <- FindMarkers(CTE.combined, ident.1 = "OL1_CTE", ident.2 = "OL1_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL2_CTE vs. OL2_Control
+OL2_DE <- FindMarkers(CTE.combined, ident.1 = "OL2_CTE", ident.2 = "OL2_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL3_CTE vs. OL3_Control
+OL3_DE <- FindMarkers(CTE.combined, ident.1 = "OL3_CTE", ident.2 = "OL3_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL4_CTE vs. OL4_Control
+OL4_DE <- FindMarkers(CTE.combined, ident.1 = "OL4_CTE", ident.2 = "OL4_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL5_CTE vs. OL5_Control
+OL5_DE <- FindMarkers(CTE.combined, ident.1 = "OL5_CTE", ident.2 = "OL5_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL6_CTE vs. OL6_Control
+OL6_DE <- FindMarkers(CTE.combined, ident.1 = "OL6_CTE", ident.2 = "OL6_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL7_CTE vs. OL7_Control
+OL7_DE <- FindMarkers(CTE.combined, ident.1 = "OL7_CTE", ident.2 = "OL7_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary OL8_CTE vs. OL8_Control
+OL8_DE <- FindMarkers(CTE.combined, ident.1 = "OL8_CTE", ident.2 = "OL8_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary astrocyte DE
+Astrocyte_DE <- FindMarkers(CTE.combined, ident.1 = c("Astrocyte1_CTE", "Astrocyte2_CTE", "Astrocyte3_CTE"), ident.2 = c("Astrocyte1_Control", "Astrocyte2_Control", "Astrocyte3_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary Astrocyte1 DE
+Astrocyte1_DE <- FindMarkers(CTE.combined, ident.1 = "Astrocyte1_CTE", ident.2 = "Astrocyte1_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary Astrocyte2 DE
+Astrocyte2_DE <- FindMarkers(CTE.combined, ident.1 = "Astrocyte2_CTE", ident.2 = "Astrocyte2_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary Astrocyte3 DE
+Astrocyte3_DE <- FindMarkers(CTE.combined, ident.1 = "Astrocyte3_CTE", ident.2 = "Astrocyte3_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Primary oligodendrocyte precursor cell DE
+OPC_DE <- FindMarkers(CTE.combined, ident.1 = c("OPC1_CTE", "OPC2_CTE"), ident.2 = c("OPC1_Control", "OPC2_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary OPC1 DE
+OPC1_DE <- FindMarkers(CTE.combined, ident.1 = c("OPC1_CTE"), ident.2 = c("OPC1_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary OPC2 DE
+OPC2_DE <- FindMarkers(CTE.combined, ident.1 = c("OPC2_CTE"), ident.2 = c("OPC2_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary excitatory neuron DE
+EN_DE <- FindMarkers(CTE.combined, ident.1 = c("Exc_Neuron1_CTE", "Exc_Neuron2_CTE"), ident.2 = c("Exc_Neuron1_Control", "Exc_Neuron2_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary excitatory neuron1 DE
+EN1_DE <- FindMarkers(CTE.combined, ident.1 = c("Exc_Neuron1_CTE"), ident.2 = c("Exc_Neuron1_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary excitatory neuron2 DE
+EN2_DE <- FindMarkers(CTE.combined, ident.1 = c("Exc_Neuron2_CTE"), ident.2 = c("Exc_Neuron2_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary interneuron DE
+IN_DE <- FindMarkers(CTE.combined, ident.1 = c("Int_Neuron_CTE"), ident.2 = c("Int_Neuron_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary microglia DE
+micro_DE <- FindMarkers(CTE.combined, ident.1 = c("Microglia_CTE"), ident.2 = c("Microglia_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Primary endothelial cell DE
+endo_DE <- FindMarkers(CTE.combined, ident.1 = c("Endo_CTE"), ident.2 = c("Endo_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Subset oligodendrocyte DE
+OL_sub_DE <- FindMarkers(OLs, ident.1 = c("OL1_CTE", "OL2_CTE", "OL3_CTE", "OL4_CTE", "OL5_CTE", "OL6_CTE", "OL7_CTE", "OL8_CTE"), ident.2 = c("OL1_Control", "OL2_Control", "OL3_Control", "OL4_Control", "OL5_Control", "OL6_Control", "OL7_Control", "OL8_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL1_CTE vs. OL1_Control
+OL1_sub_DE <- FindMarkers(OLs, ident.1 = "OL1_CTE", ident.2 = "OL1_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL2_CTE vs. OL2_Control
+OL2_sub_DE <- FindMarkers(OLs, ident.1 = "OL2_CTE", ident.2 = "OL2_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL3_CTE vs. OL3_Control
+OL3_sub_DE <- FindMarkers(OLs, ident.1 = "OL3_CTE", ident.2 = "OL3_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL4_CTE vs. OL4_Control
+OL4_sub_DE <- FindMarkers(OLs, ident.1 = "OL4_CTE", ident.2 = "OL4_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL5_CTE vs. OL5_Control
+OL5_sub_DE <- FindMarkers(OLs, ident.1 = "OL5_CTE", ident.2 = "OL5_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL6_CTE vs. OL6_Control
+OL6_sub_DE <- FindMarkers(OLs, ident.1 = "OL6_CTE", ident.2 = "OL6_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL7_CTE vs. OL7_Control
+OL7_sub_DE <- FindMarkers(OLs, ident.1 = "OL7_CTE", ident.2 = "OL7_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset OL8_CTE vs. OL8_Control
+OL8_sub_DE <- FindMarkers(OLs, ident.1 = "OL8_CTE", ident.2 = "OL8_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset astrocyte DE
+Astrocyte_sub_DE <- FindMarkers(astros, ident.1 = c("Astrocyte1_CTE", "Astrocyte2_CTE", "Astrocyte3_CTE"), ident.2 = c("Astrocyte1_Control", "Astrocyte2_Control", "Astrocyte3_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Subset Astrocyte1 DE
+Astrocyte1_sub_DE <- FindMarkers(astros, ident.1 = "Astrocyte1_CTE", ident.2 = "Astrocyte1_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset Astrocyte2 DE
+Astrocyte2_sub_DE <- FindMarkers(astros, ident.1 = "Astrocyte2_CTE", ident.2 = "Astrocyte2_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset Astrocyte3 DE
+Astrocyte3_sub_DE <- FindMarkers(astros, ident.1 = "Astrocyte3_CTE", ident.2 = "Astrocyte3_Control", logfc.threshold = 0, test.use = "MAST")
+
+#Subset oligodendrocyte precursor cell DE
+OPC_sub_DE <- FindMarkers(OPCs, ident.1 = c("OPC1_CTE", "OPC2_CTE"), ident.2 = c("OPC1_Control", "OPC2_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Subset OPC1 DE
+OPC1_sub_DE <- FindMarkers(OPCs, ident.1 = c("OPC1_CTE"), ident.2 = c("OPC1_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Subset OPC2 DE
+OPC2_sub_DE <- FindMarkers(OPCs, ident.1 = c("OPC2_CTE"), ident.2 = c("OPC2_Control"), logfc.threshold = 0, test.use = "MAST")
+
+#Supplementary Table 5
+Idents(CTE.combined) <- "celltype.stim"
+Astrocyte_DE <- FindMarkers(astros, ident.1 = c("Astrocyte1_CTE", "Astrocyte2_CTE", "Astrocyte3_CTE"), ident.2 = c("Astrocyte1_Control", "Astrocyte2_Control", "Astrocyte3_Control"), logfc.threshold = 0, test.use = "MAST")
+Astrocyte_DE <- rownames(Astrocyte_DE)[Astrocyte_DE$p_val_adj < 0.05]
+write.csv(Astrocyte_DE, file = "Astrocyte_Query_Set")
+Astrocyte_Ref <- rownames(astros)[apply(astros, 1, sum) > 0]
+write.csv(Astrocyte_Ref, file = "Astrocyte_Reference_Set")
+
+#Supplementary Table 6
+all_cells <- table(CTE.combined@meta.data$subject, CTE.combined@meta.data$celltype)
+write.table(all_cells, file="cells.tsv")
+
+ol_cells <- table(OLs@meta.data$subject, OLs@meta.data$celltype)
+write.table(ol_cells, file = "ol_cells.tsv")
+
+astro_cells <- table(astros@meta.data$subject, astros@meta.data$celltype)
+write.table(astro_cells, file="astro_cells.tsv")
+
+opc_cells = table(OPCs@meta.data$subject, OPCs@meta.data$celltype)
+write.table(opc_cells, file="opc_cells.tsv")
