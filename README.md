@@ -1,5 +1,5 @@
 # Altered-oligodendroglia-and-astroglia-in-chronic-traumatic-encephalopathy
-All code used for the manuscript: Chancellor, K.B., et al., 2020, Alterd oligodendroglia and astroglia in chronic traumatic encephalopathy, bioRxiv. 
+All code used for the manuscript: Chancellor, et al., 2020, Alterd oligodendroglia and astroglia in chronic traumatic encephalopathy, bioRxiv. 
 
 Load_Data includes the steps to load counts produced by the inDrops pipeline ("Pipeline for processing inDrops sequencing data" 
 (https://github.com/indrops/indrops)) into R. 
